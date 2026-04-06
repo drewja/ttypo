@@ -75,7 +75,7 @@ struct Opt {
     no_backspace: bool,
 
     /// Treat input as raw text: split into words and preserve line layout
-    #[arg(long)]
+    #[arg(long, requires = "contents")]
     raw: bool,
 
     /// Display all UTF-8 but skip non-ASCII-printable characters during typing
@@ -331,6 +331,13 @@ fn main() -> io::Result<()> {
         std::process::exit(1);
     }
 
+    let is_file_mode = opt.raw;
+    let saved_contents = if is_file_mode {
+        Some((contents.clone(), lines.clone()))
+    } else {
+        None
+    };
+
     terminal::enable_raw_mode()?;
     execute!(
         io::stdout(),
@@ -368,7 +375,9 @@ fn main() -> io::Result<()> {
                 ..
             }) => match state {
                 State::Test(ref test) => {
-                    state = State::Results(Results::from(test));
+                    let mut results = Results::from(test);
+                    results.is_repeat = is_file_mode;
+                    state = State::Results(results);
                 }
                 State::Results(_) => break,
             },
@@ -380,7 +389,9 @@ fn main() -> io::Result<()> {
                 if let Event::Key(key) = event {
                     test.handle_key(key);
                     if test.complete {
-                        state = State::Results(Results::from(&*test));
+                        let mut results = Results::from(&*test);
+                        results.is_repeat = is_file_mode;
+                        state = State::Results(results);
                     }
                 }
             }
@@ -391,9 +402,13 @@ fn main() -> io::Result<()> {
                     modifiers: KeyModifiers::NONE,
                     ..
                 }) => {
-                    let (new_contents, new_lines) = opt.gen_contents().expect(
-                        "Couldn't get test contents. Make sure the specified language actually exists.",
-                    );
+                    let (new_contents, new_lines) = if let Some((ref c, ref l)) = saved_contents {
+                        (c.clone(), l.clone())
+                    } else {
+                        opt.gen_contents().expect(
+                            "Couldn't get test contents. Make sure the specified language actually exists.",
+                        )
+                    };
                     if new_contents.is_empty() {
                         continue;
                     }
