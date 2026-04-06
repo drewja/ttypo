@@ -9,7 +9,7 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     symbols::Marker,
     text::{Line, Span, Text},
-    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph, Widget},
+    widgets::{Axis, Block, Borders, Chart, Dataset, GraphType, Paragraph, Widget, Wrap},
 };
 use results::Fraction;
 
@@ -164,13 +164,15 @@ impl ThemedWidget for &Test {
                 lines
             }
         };
-        let target = Paragraph::new(target_lines).block(
-            Block::default()
-                .title(Span::styled("Prompt", theme.title))
-                .borders(Borders::ALL)
-                .border_type(theme.border_type)
-                .border_style(theme.prompt_border),
-        );
+        let target = Paragraph::new(target_lines)
+            .wrap(Wrap { trim: false })
+            .block(
+                Block::default()
+                    .title(Span::styled("Prompt", theme.title))
+                    .borders(Borders::ALL)
+                    .border_type(theme.border_type)
+                    .border_style(theme.prompt_border),
+            );
         target.render(chunks[1], buf);
     }
 }
