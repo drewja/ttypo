@@ -369,10 +369,15 @@ impl ThemedWidget for &results::Results {
             .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
             .split(res_chunks[0]);
 
-        let msg = if self.missed_words.is_empty() {
-            "Press 'q' to quit or 'r' for another test"
-        } else {
-            "Press 'q' to quit, 'r' for another test or 'p' to practice missed words"
+        let msg = match (self.is_repeat, self.missed_words.is_empty()) {
+            (true, true) => "Press 'q' to quit or 'r' to repeat the test",
+            (true, false) => {
+                "Press 'q' to quit, 'r' to repeat the test or 'p' to practice missed words"
+            }
+            (false, true) => "Press 'q' to quit or 'r' for another test",
+            (false, false) => {
+                "Press 'q' to quit, 'r' for another test or 'p' to practice missed words"
+            }
         };
 
         let exit = Span::styled(msg, theme.results_restart_prompt);
