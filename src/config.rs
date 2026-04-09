@@ -60,6 +60,18 @@ pub struct Theme {
     #[serde(deserialize_with = "deserialize_style")]
     pub prompt_skipped: Style,
 
+    // status bar (during test)
+    #[serde(deserialize_with = "deserialize_style")]
+    pub status_wpm: Style,
+    #[serde(deserialize_with = "deserialize_style")]
+    pub status_timer: Style,
+    #[serde(deserialize_with = "deserialize_style")]
+    pub status_progress: Style,
+    #[serde(deserialize_with = "deserialize_style")]
+    pub status_progress_filled: Style,
+    #[serde(deserialize_with = "deserialize_style")]
+    pub status_progress_empty: Style,
+
     // results widget
     #[serde(deserialize_with = "deserialize_style")]
     pub results_overview: Style,
@@ -70,6 +82,11 @@ pub struct Theme {
     pub results_worst_keys: Style,
     #[serde(deserialize_with = "deserialize_style")]
     pub results_worst_keys_border: Style,
+
+    #[serde(deserialize_with = "deserialize_style")]
+    pub results_missed_words: Style,
+    #[serde(deserialize_with = "deserialize_style")]
+    pub results_missed_words_border: Style,
 
     #[serde(deserialize_with = "deserialize_style")]
     pub results_chart: Style,
@@ -88,48 +105,65 @@ impl Default for Theme {
             default: Style::default(),
 
             title: Style::default()
-                .fg(Color::Rgb(255,255,215))
+                .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
 
-            input_border: Style::default().fg(Color::LightCyan),
-            prompt_border: Style::default().fg(Color::LightMagenta),
+            input_border: Style::default().fg(Color::Blue),
+            prompt_border: Style::default().fg(Color::Blue),
 
             border_type: BorderType::Rounded,
 
-            prompt_correct: Style::default().fg(Color::White),
-            prompt_incorrect: Style::default().fg(Color::Rgb(255,100,0)),
-            prompt_untyped: Style::default().fg(Color::Gray),
+            prompt_correct: Style::default().fg(Color::Green),
+            prompt_incorrect: Style::default().fg(Color::Red),
+            prompt_untyped: Style::default().fg(Color::DarkGray),
 
             prompt_current_correct: Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+            prompt_current_incorrect: Style::default()
+                .fg(Color::LightRed)
+                .add_modifier(Modifier::BOLD),
+            prompt_current_untyped: Style::default()
                 .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
-            prompt_current_incorrect: Style::default().fg(Color::Rgb(255,100,0)).add_modifier(Modifier::BOLD),
-            prompt_current_untyped: Style::default()
-                .fg(Color::LightBlue)
-                .add_modifier(Modifier::BOLD),
 
-            prompt_cursor: Style::default().add_modifier(Modifier::UNDERLINED),
+            prompt_cursor: Style::default()
+                .add_modifier(Modifier::REVERSED)
+                .add_modifier(Modifier::BOLD),
 
             prompt_skipped: Style::default().fg(Color::Yellow),
 
-            results_overview: Style::default()
-                .fg(Color::Cyan)
+            status_wpm: Style::default()
+                .fg(Color::Green)
                 .add_modifier(Modifier::BOLD),
-            results_overview_border: Style::default().fg(Color::Cyan),
+            status_timer: Style::default().fg(Color::DarkGray),
+            status_progress: Style::default().fg(Color::DarkGray),
+            status_progress_filled: Style::default().fg(Color::Green),
+            status_progress_empty: Style::default().fg(Color::DarkGray),
+
+            results_overview: Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+            results_overview_border: Style::default().fg(Color::Blue),
 
             results_worst_keys: Style::default()
-                .fg(Color::Cyan)
+                .fg(Color::Yellow)
                 .add_modifier(Modifier::BOLD),
-            results_worst_keys_border: Style::default().fg(Color::Cyan),
+            results_worst_keys_border: Style::default().fg(Color::Blue),
+
+            results_missed_words: Style::default()
+                .fg(Color::Red)
+                .add_modifier(Modifier::BOLD),
+            results_missed_words_border: Style::default().fg(Color::Blue),
 
             results_chart: Style::default().fg(Color::Cyan),
-            results_chart_x: Style::default().fg(Color::Cyan),
+            results_chart_x: Style::default().fg(Color::DarkGray),
             results_chart_y: Style::default()
-                .fg(Color::Gray)
+                .fg(Color::DarkGray)
                 .add_modifier(Modifier::BOLD),
 
             results_restart_prompt: Style::default()
-                .fg(Color::Gray)
+                .fg(Color::DarkGray)
                 .add_modifier(Modifier::ITALIC),
         }
     }
