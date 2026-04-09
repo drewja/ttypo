@@ -88,24 +88,24 @@ impl Default for Theme {
             default: Style::default(),
 
             title: Style::default()
-                .fg(Color::White)
+                .fg(Color::Rgb(255,255,215))
                 .add_modifier(Modifier::BOLD),
 
-            input_border: Style::default().fg(Color::Cyan),
-            prompt_border: Style::default().fg(Color::Green),
+            input_border: Style::default().fg(Color::LightCyan),
+            prompt_border: Style::default().fg(Color::LightMagenta),
 
             border_type: BorderType::Rounded,
 
-            prompt_correct: Style::default().fg(Color::Green),
-            prompt_incorrect: Style::default().fg(Color::Red),
+            prompt_correct: Style::default().fg(Color::White),
+            prompt_incorrect: Style::default().fg(Color::Rgb(255,100,0)),
             prompt_untyped: Style::default().fg(Color::Gray),
 
             prompt_current_correct: Style::default()
-                .fg(Color::Green)
+                .fg(Color::White)
                 .add_modifier(Modifier::BOLD),
-            prompt_current_incorrect: Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+            prompt_current_incorrect: Style::default().fg(Color::Rgb(255,100,0)).add_modifier(Modifier::BOLD),
             prompt_current_untyped: Style::default()
-                .fg(Color::Blue)
+                .fg(Color::LightBlue)
                 .add_modifier(Modifier::BOLD),
 
             prompt_cursor: Style::default().add_modifier(Modifier::UNDERLINED),
