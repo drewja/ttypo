@@ -26,6 +26,7 @@ use std::{
     num,
     path::PathBuf,
     str,
+    time::Duration,
 };
 
 #[derive(RustEmbed)]
@@ -266,6 +267,20 @@ impl State {
                     let area = f.size();
                     f.render_widget(config.theme.apply_to(test), area);
 
+                    let h_margin = if area.width > 90 {
+                        (area.width - 90) / 2
+                    } else {
+                        0
+                    };
+                    let padded = Layout::default()
+                        .direction(Direction::Horizontal)
+                        .constraints([
+                            Constraint::Length(h_margin),
+                            Constraint::Min(1),
+                            Constraint::Length(h_margin),
+                        ])
+                        .split(area)[1];
+
                     // Position cursor at end of input for IME composition support
                     let prompt_constraint = if !test.lines.is_empty() {
                         Constraint::Min(6)
@@ -274,8 +289,12 @@ impl State {
                     };
                     let chunks = Layout::default()
                         .direction(Direction::Vertical)
-                        .constraints([Constraint::Length(3), prompt_constraint])
-                        .split(area);
+                        .constraints([
+                            Constraint::Length(3),
+                            prompt_constraint,
+                            Constraint::Length(1),
+                        ])
+                        .split(padded);
                     let inner_x = chunks[0].x + 1;
                     let inner_y = chunks[0].y + 1;
                     let progress_width =
@@ -358,6 +377,12 @@ fn main() -> io::Result<()> {
 
     state.render_into(&mut terminal, &config)?;
     loop {
+        // Poll with timeout so the status bar (timer/WPM) updates live
+        if !event::poll(Duration::from_millis(200))? {
+            // Redraw for timer updates
+            state.render_into(&mut terminal, &config)?;
+            continue;
+        }
         let event = event::read()?;
 
         // handle exit controls

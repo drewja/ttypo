@@ -78,6 +78,21 @@ impl ThemedWidget for &Test {
     fn render(self, area: Rect, buf: &mut Buffer, theme: &Theme) {
         buf.set_style(area, theme.default);
 
+        // Center content on wide terminals
+        let h_margin = if area.width > 90 {
+            (area.width - 90) / 2
+        } else {
+            0
+        };
+        let padded = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Length(h_margin),
+                Constraint::Min(1),
+                Constraint::Length(h_margin),
+            ])
+            .split(area)[1];
+
         // Use flexible prompt height in file mode so more text is visible
         let prompt_constraint = if !self.lines.is_empty() {
             Constraint::Min(6)
@@ -88,8 +103,12 @@ impl ThemedWidget for &Test {
         // Chunks
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Length(3), prompt_constraint])
-            .split(area);
+            .constraints([
+                Constraint::Length(3),
+                prompt_constraint,
+                Constraint::Length(1),
+            ])
+            .split(padded);
 
         // Sections
         let input = SizedBlock {
@@ -174,6 +193,43 @@ impl ThemedWidget for &Test {
                     .border_style(theme.prompt_border),
             );
         target.render(chunks[1], buf);
+
+        // Status bar: WPM | Timer | Progress | Progress bar
+        let (done, total) = self.progress();
+        let elapsed = self.elapsed_secs();
+        let mins = (elapsed as u64) / 60;
+        let secs = (elapsed as u64) % 60;
+        let wpm = self.live_wpm();
+
+        let progress_frac = if total > 0 {
+            done as f64 / total as f64
+        } else {
+            0.0
+        };
+
+        let sep = Span::styled(" \u{2502} ", theme.status_timer);
+        let bar_width = 20usize;
+        let filled = (progress_frac * bar_width as f64).round() as usize;
+        let empty = bar_width.saturating_sub(filled);
+
+        let status_line = Line::from(vec![
+            Span::styled(" ", theme.default),
+            Span::styled(format!("{:.0} wpm", wpm), theme.status_wpm),
+            sep.clone(),
+            Span::styled(format!("{:01}:{:02}", mins, secs), theme.status_timer),
+            sep.clone(),
+            Span::styled(format!("{}/{}", done, total), theme.status_progress),
+            sep,
+            Span::styled(
+                "\u{2588}".repeat(filled),
+                theme.status_progress_filled,
+            ),
+            Span::styled(
+                "\u{2591}".repeat(empty),
+                theme.status_progress_empty,
+            ),
+        ]);
+        buf.set_line(chunks[2].x, chunks[2].y, &status_line, chunks[2].width);
     }
 }
 
@@ -366,7 +422,11 @@ impl ThemedWidget for &results::Results {
             .split(chunks[0]);
         let info_chunks = Layout::default()
             .direction(Direction::Horizontal)
-            .constraints([Constraint::Ratio(1, 2), Constraint::Ratio(1, 2)])
+            .constraints([
+                Constraint::Ratio(1, 3),
+                Constraint::Ratio(1, 3),
+                Constraint::Ratio(1, 3),
+            ])
             .split(res_chunks[0]);
 
         let msg = match (self.is_repeat, self.missed_words.is_empty()) {
@@ -444,6 +504,26 @@ impl ThemedWidget for &results::Results {
                 .border_style(theme.results_worst_keys_border),
         );
         worst.render(info_chunks[1], buf);
+
+        let mut missed_text = Text::styled("", theme.results_missed_words);
+        if self.missed_words.is_empty() {
+            missed_text.extend([Line::from("None!")]);
+        } else {
+            missed_text.extend(
+                self.missed_words
+                    .iter()
+                    .take(info_chunks[2].height.saturating_sub(2) as usize)
+                    .map(|w| Line::from(format!("- {}", w))),
+            );
+        }
+        let missed = Paragraph::new(missed_text).block(
+            Block::default()
+                .title(Span::styled("Missed Words", theme.title))
+                .borders(Borders::ALL)
+                .border_type(theme.border_type)
+                .border_style(theme.results_missed_words_border),
+        );
+        missed.render(info_chunks[2], buf);
 
         let wpm_sma: Vec<(f64, f64)> = self
             .timing
@@ -598,7 +678,7 @@ mod tests {
 
         #[test]
         fn typed_word_qwerty_skips_unicode() {
-            // Word "café" typed as "caf" — the é is shown as Skipped (yellow)
+            // Word "café" typed as "caf" - the é is shown as Skipped (yellow)
             let mut word = TestWord::from("caf\u{00e9}");
             word.progress = "caf".to_string();
 

@@ -5,7 +5,7 @@ use std::fmt;
 use std::time::Instant;
 
 /// Returns true if a character is typeable on a standard US QWERTY keyboard
-/// (printable ASCII: space through tilde, 0x20–0x7E).
+/// (printable ASCII: space through tilde, 0x20-0x7E).
 pub fn is_typeable(c: char) -> bool {
     c.is_ascii() && !c.is_ascii_control()
 }
@@ -85,6 +85,7 @@ pub struct Test {
     pub lines: Vec<DisplayLine>,
     /// When true, non-typeable characters are skipped during typing.
     pub qwerty: bool,
+    pub start_time: Option<Instant>,
 }
 
 impl Test {
@@ -105,14 +106,43 @@ impl Test {
             backspace_enabled,
             lines,
             qwerty,
+            start_time: None,
         };
         test.skip_non_typeable_words();
         test
     }
 
+    pub fn elapsed_secs(&self) -> f64 {
+        self.start_time
+            .map(|t| t.elapsed().as_secs_f64())
+            .unwrap_or(0.0)
+    }
+
+    pub fn live_wpm(&self) -> f64 {
+        let elapsed = self.elapsed_secs();
+        if elapsed < 0.5 {
+            return 0.0;
+        }
+        let chars_typed: usize = self.words[..self.current_word]
+            .iter()
+            .map(|w| w.progress.len())
+            .sum::<usize>()
+            + self.words[self.current_word].progress.len();
+        // Standard: 1 word = 5 characters
+        (chars_typed as f64 / 5.0) / (elapsed / 60.0)
+    }
+
+    pub fn progress(&self) -> (usize, usize) {
+        (self.current_word, self.words.len())
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) {
         if key.kind != KeyEventKind::Press {
             return;
+        }
+
+        if self.start_time.is_none() {
+            self.start_time = Some(Instant::now());
         }
 
         let qwerty = self.qwerty;
@@ -214,6 +244,7 @@ impl Test {
         });
         self.current_word = 0;
         self.complete = false;
+        self.start_time = None;
         self.skip_non_typeable_words();
     }
 
