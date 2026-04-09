@@ -59,6 +59,7 @@ pub struct Results {
     pub timing: TimingData,
     pub accuracy: AccuracyData,
     pub missed_words: Vec<String>,
+    pub is_repeat: bool,
 }
 
 impl From<&Test> for Results {
@@ -70,6 +71,7 @@ impl From<&Test> for Results {
             timing: calc_timing(&events),
             accuracy: calc_accuracy(&events),
             missed_words: calc_missed_words(test),
+            is_repeat: false,
         }
     }
 }
