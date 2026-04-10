@@ -13,11 +13,7 @@ use crossterm::{
     execute, terminal,
 };
 use rand::{seq::SliceRandom, thread_rng};
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
-    terminal::Terminal,
-};
+use ratatui::{backend::CrosstermBackend, terminal::Terminal};
 use rust_embed::RustEmbed;
 use std::{
     ffi::OsString,
@@ -264,44 +260,7 @@ impl State {
         match self {
             State::Test(test) => {
                 terminal.draw(|f| {
-                    let area = f.size();
-                    f.render_widget(config.theme.apply_to(test), area);
-
-                    let h_margin = if area.width > 90 {
-                        (area.width - 90) / 2
-                    } else {
-                        0
-                    };
-                    let padded = Layout::default()
-                        .direction(Direction::Horizontal)
-                        .constraints([
-                            Constraint::Length(h_margin),
-                            Constraint::Min(1),
-                            Constraint::Length(h_margin),
-                        ])
-                        .split(area)[1];
-
-                    // Position cursor at end of input for IME composition support
-                    let prompt_constraint = if !test.lines.is_empty() {
-                        Constraint::Min(6)
-                    } else {
-                        Constraint::Length(6)
-                    };
-                    let chunks = Layout::default()
-                        .direction(Direction::Vertical)
-                        .constraints([
-                            Constraint::Length(3),
-                            prompt_constraint,
-                            Constraint::Length(1),
-                        ])
-                        .split(padded);
-                    let inner_x = chunks[0].x + 1;
-                    let inner_y = chunks[0].y + 1;
-                    let progress_width =
-                        ratatui::text::Line::from(test.words[test.current_word].progress.as_str())
-                            .width() as u16;
-                    let max_cursor_x = chunks[0].right().saturating_sub(2);
-                    f.set_cursor((inner_x + progress_width).min(max_cursor_x), inner_y);
+                    f.render_widget(config.theme.apply_to(test), f.size());
                 })?;
             }
             State::Results(results) => {

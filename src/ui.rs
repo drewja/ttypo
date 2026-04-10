@@ -19,39 +19,6 @@ const WPM_PER_CPS: f64 = 12.0;
 // Width of the moving average window for the WPM chart
 const WPM_SMA_WIDTH: usize = 10;
 
-#[derive(Clone)]
-struct SizedBlock<'a> {
-    block: Block<'a>,
-    area: Rect,
-}
-
-impl SizedBlock<'_> {
-    fn render(self, buf: &mut Buffer) {
-        self.block.render(self.area, buf)
-    }
-}
-
-trait UsedWidget: Widget {}
-impl UsedWidget for Paragraph<'_> {}
-
-trait DrawInner<T> {
-    fn draw_inner(&self, content: T, buf: &mut Buffer);
-}
-
-impl DrawInner<&Line<'_>> for SizedBlock<'_> {
-    fn draw_inner(&self, content: &Line, buf: &mut Buffer) {
-        let inner = self.block.inner(self.area);
-        buf.set_line(inner.x, inner.y, content, inner.width);
-    }
-}
-
-impl<T: UsedWidget> DrawInner<T> for SizedBlock<'_> {
-    fn draw_inner(&self, content: T, buf: &mut Buffer) {
-        let inner = self.block.inner(self.area);
-        content.render(inner, buf);
-    }
-}
-
 pub trait ThemedWidget {
     fn render(self, area: Rect, buf: &mut Buffer, theme: &Theme);
 }
@@ -100,30 +67,57 @@ impl ThemedWidget for &Test {
             Constraint::Length(6)
         };
 
-        // Chunks
         let chunks = Layout::default()
             .direction(Direction::Vertical)
             .constraints([
-                Constraint::Length(3),
+                Constraint::Length(1),
                 prompt_constraint,
                 Constraint::Length(1),
             ])
             .split(padded);
 
-        // Sections
-        let input = SizedBlock {
-            block: Block::default()
-                .title(Line::from(vec![Span::styled("Input", theme.title)]))
-                .borders(Borders::ALL)
-                .border_type(theme.border_type)
-                .border_style(theme.input_border),
-            area: chunks[0],
+        // Stats line - centered
+        let (done, total) = self.progress();
+        let elapsed = self.elapsed_secs();
+        let mins = (elapsed as u64) / 60;
+        let secs = (elapsed as u64) % 60;
+        let wpm = self.live_wpm();
+        let sep = Span::styled(" \u{2502} ", theme.status_timer);
+
+        let stats_line = Line::from(vec![
+            Span::styled(format!("{:.0} wpm", wpm), theme.status_wpm),
+            sep.clone(),
+            Span::styled(format!("{:01}:{:02}", mins, secs), theme.status_timer),
+            sep,
+            Span::styled(format!("{}/{}", done, total), theme.status_progress),
+        ]);
+        let stats_width: usize = stats_line.spans.iter().map(|s| s.width()).sum();
+        let stats_offset = chunks[0]
+            .width
+            .saturating_sub(stats_width as u16)
+            / 2;
+        buf.set_line(chunks[0].x + stats_offset, chunks[0].y, &stats_line, chunks[0].width);
+
+        // Progress bar - full width of the prompt area
+        let progress_frac = if total > 0 {
+            done as f64 / total as f64
+        } else {
+            0.0
         };
-        input.draw_inner(
-            &Line::from(self.words[self.current_word].progress.clone()),
-            buf,
-        );
-        input.render(buf);
+        let bar_width = chunks[2].width as usize;
+        let filled = (progress_frac * bar_width as f64).round() as usize;
+        let empty = bar_width.saturating_sub(filled);
+        let bar_line = Line::from(vec![
+            Span::styled(
+                "\u{2588}".repeat(filled),
+                theme.status_progress_filled,
+            ),
+            Span::styled(
+                "\u{2591}".repeat(empty),
+                theme.status_progress_empty,
+            ),
+        ]);
+        buf.set_line(chunks[2].x, chunks[2].y, &bar_line, chunks[2].width);
 
         let target_lines: Vec<Line> = {
             let words = words_to_spans(&self.words, self.current_word, theme, self.qwerty);
@@ -187,49 +181,11 @@ impl ThemedWidget for &Test {
             .wrap(Wrap { trim: false })
             .block(
                 Block::default()
-                    .title(Span::styled("Prompt", theme.title))
                     .borders(Borders::ALL)
                     .border_type(theme.border_type)
                     .border_style(theme.prompt_border),
             );
         target.render(chunks[1], buf);
-
-        // Status bar: WPM | Timer | Progress | Progress bar
-        let (done, total) = self.progress();
-        let elapsed = self.elapsed_secs();
-        let mins = (elapsed as u64) / 60;
-        let secs = (elapsed as u64) % 60;
-        let wpm = self.live_wpm();
-
-        let progress_frac = if total > 0 {
-            done as f64 / total as f64
-        } else {
-            0.0
-        };
-
-        let sep = Span::styled(" \u{2502} ", theme.status_timer);
-        let bar_width = 20usize;
-        let filled = (progress_frac * bar_width as f64).round() as usize;
-        let empty = bar_width.saturating_sub(filled);
-
-        let status_line = Line::from(vec![
-            Span::styled(" ", theme.default),
-            Span::styled(format!("{:.0} wpm", wpm), theme.status_wpm),
-            sep.clone(),
-            Span::styled(format!("{:01}:{:02}", mins, secs), theme.status_timer),
-            sep.clone(),
-            Span::styled(format!("{}/{}", done, total), theme.status_progress),
-            sep,
-            Span::styled(
-                "\u{2588}".repeat(filled),
-                theme.status_progress_filled,
-            ),
-            Span::styled(
-                "\u{2591}".repeat(empty),
-                theme.status_progress_empty,
-            ),
-        ]);
-        buf.set_line(chunks[2].x, chunks[2].y, &status_line, chunks[2].width);
     }
 }
 
@@ -440,8 +396,12 @@ impl ThemedWidget for &results::Results {
             }
         };
 
-        let exit = Span::styled(msg, theme.results_restart_prompt);
-        buf.set_span(chunks[1].x, chunks[1].y, &exit, chunks[1].width);
+        let exit = Line::from(Span::styled(msg, theme.results_restart_prompt));
+        let x_offset = chunks[1]
+            .width
+            .saturating_sub(msg.len() as u16)
+            / 2;
+        buf.set_line(chunks[1].x + x_offset, chunks[1].y, &exit, chunks[1].width);
 
         // Sections
         let mut overview_text = Text::styled("", theme.results_overview);
@@ -538,6 +498,17 @@ impl ThemedWidget for &results::Results {
             })
             .collect();
 
+        // Points where a mistake occurred
+        let mistake_points: Vec<(f64, f64)> = wpm_sma
+            .iter()
+            .filter(|(x, _)| {
+                let idx = *x as usize;
+                idx < self.timing.per_event_correct.len()
+                    && !self.timing.per_event_correct[idx]
+            })
+            .copied()
+            .collect();
+
         // Render the chart if possible
         if !wpm_sma.is_empty() {
             let wpm_sma_min = wpm_sma
@@ -549,12 +520,23 @@ impl ThemedWidget for &results::Results {
                 .map(|(_, x)| x)
                 .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
-            let wpm_datasets = vec![Dataset::default()
+            let mut wpm_datasets = vec![Dataset::default()
                 .name("WPM")
-                .marker(Marker::Braille)
+                .marker(Marker::Dot)
                 .graph_type(GraphType::Line)
                 .style(theme.results_chart)
                 .data(&wpm_sma)];
+
+            if !mistake_points.is_empty() {
+                wpm_datasets.push(
+                    Dataset::default()
+                        .name("Mistakes")
+                        .marker(Marker::Dot)
+                        .graph_type(GraphType::Scatter)
+                        .style(theme.results_chart_mistakes)
+                        .data(&mistake_points),
+                );
+            }
 
             let y_label_min = wpm_sma_min as u16;
             let y_label_max = (wpm_sma_max as u16).max(y_label_min + 6);
