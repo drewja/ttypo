@@ -47,6 +47,7 @@ pub struct TimingData {
     // Instead of storing WPM, we store CPS (clicks per second)
     pub overall_cps: f64,
     pub per_event: Vec<f64>,
+    pub per_event_correct: Vec<bool>,
     pub per_key: HashMap<KeyEvent, f64>,
 }
 
@@ -80,6 +81,7 @@ fn calc_timing(events: &[&super::TestEvent]) -> TimingData {
     let mut timing = TimingData {
         overall_cps: -1.0,
         per_event: Vec::new(),
+        per_event_correct: Vec::new(),
         per_key: HashMap::new(),
     };
 
@@ -94,6 +96,9 @@ fn calc_timing(events: &[&super::TestEvent]) -> TimingData {
 
         if let Some(event_dur) = event_dur {
             timing.per_event.push(event_dur);
+            timing
+                .per_event_correct
+                .push(win[1].correct != Some(false));
 
             let key = keys.entry(win[1].key).or_insert((0.0, 0));
             key.0 += event_dur;
