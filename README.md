@@ -1,117 +1,64 @@
 # ttyper
 
-[![Crates.io](https://img.shields.io/crates/v/ttyper)](https://crates.io/crates/ttyper)
-[![GitHub Stars](https://img.shields.io/github/stars/max-niederman/ttyper)](https://github.com/max-niederman/ttyper)
-[![GitHub Workflow Status](https://img.shields.io/github/actions/workflow/status/max-niederman/ttyper/rust.yml)](https://github.com/max-niederman/ttyper/actions)
-![GitHub commit activity](https://img.shields.io/github/commit-activity/m/max-niederman/ttyper)
-[![Discord](https://img.shields.io/discord/1233267011963060275?logo=discord)](https://discord.gg/3wJyrBsKXu)
-[![License](https://img.shields.io/crates/l/ttyper)](./LICENSE.md)
-
-ttyper is a terminal-based typing test built with Rust and Ratatui.
+A terminal-based typing test built with Rust and Ratatui. Forked from [max-niederman/ttyper](https://github.com/max-niederman/ttyper).
 
 ![Recording](./resources/recording.gif)
 
-## chat
+## added features
 
-If you're interested in contributing to ttyper, need help with an issue, or just want to hang out, you should join [the development Discord server](https://discord.gg/3wJyrBsKXu).
+- **Raw mode** (`--raw`) - preserves display of original line breaks, indentation, and empty lines from input files
+- **ASCII mode** (`--ascii`) - skips non-ascii characters during typing, highlighted in yellow
+- **Live status bar** - shows WPM, elapsed time, and word progress while typing
+- **Full-width progress bar** - visual progress indicator below the prompt
+- **Missed words panel** - results screen shows which words had errors
+- **Practice missed words** - press `p` on results to practice missed words
+- **Repeat test** - press `r` on results to repeat the test
+- **Mistake markers on chart** - red dots on the WPM chart show when errors occurred
+- **theme** - richer default color scheme using RGB values
+- **Stdin support** - pipe text in with `-` (e.g. `man ls | ttyper --raw --ascii -`)
 
 ## installation
 
-### pre-built binaries
-
-Pre-built binaries are available for most architectures on [GitHub releases](https://github.com/max-niederman/ttyper/releases). If your system is not supported or you have another problem, feel free to open an issue.
-
-### cargo
-
 ```bash
-cargo install ttyper
-```
-
-### arch linux
-
-```bash
-pacman -S ttyper
-```
-
-### nix
-
-```bash
-nix-env -iA nixpkgs.ttyper # or nixos.ttyper on NixOS
-```
-
-### scoop
-
-```bash
-scoop install ttyper
+cargo install --path .
 ```
 
 ## usage
 
-For usage instructions, you can run `ttyper --help`:
-
 ```
-ttyper 1.6.1
-Terminal-based typing test.
+ttyper [OPTIONS] [PATH] [COMMAND]
 
-USAGE:
-    ttyper [FLAGS] [OPTIONS] [contents]
+Arguments:
+  [PATH]  Read test contents from the specified file, or "-" for stdin
 
-FLAGS:
-    -d, --debug
-    -h, --help              Prints help information
-        --list-languages    List installed languages
-        --no-backtrack      Disable backtracking to completed words
-        --sudden-death      Enable sudden death mode to restart on first error
-        --no-backspace      Disable backspace
-        --raw               Treat input as raw text: preserve line layout, indentation, and empty lines
-        --qwerty            Display all UTF-8 but skip non-ASCII-printable characters during typing
-    -V, --version           Prints version information
-
-OPTIONS:
-    -c, --config <config>                  Use config file
-    -l, --language <language>              Specify test language
-        --language-file <language-file>    Specify test language in file
-    -w, --words <words>                    Specify word count [default: 50]
-
-ARGS:
-    <contents>
+Options:
+  -d, --debug
+  -w, --words <N>             Specify word count [default: 50]
+  -c, --config <PATH>         Use config file
+      --language-file <PATH>  Specify test language in file
+  -l, --language <LANG>       Specify test language
+      --list-languages        List installed languages
+      --no-backtrack          Disable backtracking to completed words
+      --sudden-death          Enable sudden death mode to restart on first error
+      --no-backspace          Disable backspace
+      --raw                   Treat input as raw text: split into words and preserve line layout
+      --ascii                 Display all but skip non-ASCII characters during typing
+  -h, --help                  Print help
+  -V, --version               Print version
 ```
 
 ### examples
 
 | command                                  |                                          test contents |
-| :--------------------------------------- | ------------------------------------------------------: |
+| :--------------------------------------- | -----------------------------------------------------: |
 | `ttyper`                                 |                50 of the 200 most common english words |
 | `ttyper -w 100`                          |               100 of the 200 most common English words |
 | `ttyper -w 100 -l english1000`           |              100 of the 1000 most common English words |
 | `ttyper --language-file lang`            |                   50 random words from the file `lang` |
 | `ttyper text.txt`                        |               contents of `text.txt` split at newlines |
-| `ttyper --raw text.txt`                  |    contents of `text.txt` with original line layout    |
-| `ttyper --raw --qwerty source.rs`        | type a source file, skipping non-ASCII characters      |
-| `man ls \| ttyper --raw --qwerty -`      |         practice typing a man page from stdin          |
-
-### raw mode
-
-By default, ttyper treats each line of a file as a single word. The `--raw` flag changes this to preserve the original formatting of the input file:
-
-- Lines are displayed with their original line breaks and indentation
-- Tabs are expanded to 4 spaces
-- Empty lines are preserved in the display
-- Words are split on whitespace, as they would appear in the file
-- Control characters are stripped from word content
-
-This is useful for practicing with source code, man pages, or any structured text where layout matters.
-
-### qwerty mode
-
-The `--qwerty` flag is designed for typing files that contain Unicode or other non-ASCII characters (e.g. smart quotes, em dashes, accented characters). With this flag:
-
-- All UTF-8 characters are displayed in the prompt
-- Non-ASCII-printable characters are highlighted in yellow and the cursor skips over them
-- The user only needs to type the ASCII-printable portion of each word
-- Words that are entirely non-typeable (e.g. "---") are auto-skipped
-
-This pairs well with `--raw` for practicing with real-world text that may contain typographic characters your keyboard can't produce.
+| `ttyper --raw text.txt`                  |       contents of `text.txt` with original line layout |
+| `ttyper --raw --ascii source.rs`         |      type a source file, skipping non-ASCII characters |
+| `man ls \| ttyper --raw --ascii -`       |                  practice typing a man page from stdin |
 
 ## languages
 
@@ -159,149 +106,107 @@ The following languages are available by default:
 | `russian1000`        |      1000 most common Russian words |
 | `russian10000`       |     10000 most common Russian words |
 
-Additional languages can be added by creating a file in `TTYPER_CONFIG_DIR/language` with a word on each line. On Linux, the config directory is `$HOME/.config/ttyper`; on Windows, it's `C:\Users\user\AppData\Roaming\ttyper`; and on macOS it's `$HOME/Library/Application Support/ttyper`.
+Additional languages can be added by creating a file in the config language directory with a word on each line. On Linux, the config directory is `$HOME/.config/ttyper/language`; on macOS it's `$HOME/Library/Application Support/ttyper/language`.
 
 ## config
 
-Configuration is specified by the `config.toml` file in the config directory (e.g. `$HOME/.config/ttyper/config.toml`).
+Configuration is specified by `config.toml` in the config directory (e.g. `$HOME/.config/ttyper/config.toml`).
 
-The default values with explanations are below:
+Default values:
 
 ```toml
 # the language used when one is not manually specified
 default_language = "english200"
 
 [theme]
-# default style (this includes empty cells)
+# default style (includes empty cells)
 default = "none"
-
-# title text styling
-title = "white;bold"
+# title text
+title = "e6e6e6;bold"
 
 ## test styles ##
 
-# input box border
-input_border = "cyan"
 # prompt box border
-prompt_border = "green"
-
+prompt_border = "505078"
 # border type
 border_type = "rounded"
 
 # correctly typed words
-prompt_correct = "green"
+prompt_correct = "64c864"
 # incorrectly typed words
-prompt_incorrect = "red"
+prompt_incorrect = "e65050"
 # untyped words
-prompt_untyped = "gray"
+prompt_untyped = "5a5a5a"
 
 # correctly typed letters in current word
-prompt_current_correct = "green;bold"
+prompt_current_correct = "78e678;bold"
 # incorrectly typed letters in current word
-prompt_current_incorrect = "red;bold"
+prompt_current_incorrect = "ff6450;bold"
 # untyped letters in current word
-prompt_current_untyped = "blue;bold"
+prompt_current_untyped = "c8c8dc;bold"
 
 # cursor character
-prompt_cursor = "none;underlined"
+prompt_cursor = "none;reversed;bold"
+# skipped non-typeable characters (--ascii flag)
+prompt_skipped = "c8b43c"
 
-# skipped non-typeable characters (--qwerty mode)
-prompt_skipped = "yellow"
+## status bar styles ##
+
+# live WPM counter
+status_wpm = "64c864;bold"
+# elapsed time
+status_timer = "b4b4c8"
+# word progress counter
+status_progress = "b4b4c8"
+# progress bar filled portion
+status_progress_filled = "64c864"
+# progress bar empty portion
+status_progress_empty = "323232"
 
 ## results styles ##
 
 # overview text
-results_overview = "cyan;bold"
+results_overview = "64c864;bold"
 # overview border
-results_overview_border = "cyan"
+results_overview_border = "505078"
 
 # worst keys text
-results_worst_keys = "cyan;bold"
+results_worst_keys = "dcb43c;bold"
 # worst keys border
-results_worst_keys_border = "cyan"
+results_worst_keys_border = "505078"
 
-# results chart default (includes plotted data)
-results_chart = "cyan"
+# missed words text
+results_missed_words = "e65050;bold"
+# missed words border
+results_missed_words_border = "505078"
+
+# results chart line
+results_chart = "50b4dc"
+# mistake markers on chart
+results_chart_mistakes = "e65050"
 # results chart x-axis label
-results_chart_x = "cyan"
+results_chart_x = "6e6e6e"
 # results chart y-axis label
-results_chart_y = "gray;italic"
+results_chart_y = "6e6e6e;bold"
 
-# restart/quit prompt in results ui
-results_restart_prompt = "gray;italic"
+# restart/quit prompt
+results_restart_prompt = "b4b4c8;bold"
 ```
 
 ### style format
 
-The configuration uses a custom style format which can specify most [ANSI escape styling codes](<https://en.wikipedia.org/wiki/ANSI_escape_code#SGR_(Select_Graphic_Rendition)_parameters>), encoded as a string.
+Styles are encoded as a string. Start with the color specification: a single color (foreground), or two colors separated by a colon (foreground and background). Colors can be a terminal color name, a 6-digit hex color code, `none`, or `reset`.
 
-Styles begin with the color specification, which can be a single color (the foreground), or two colors separated by a colon (the foreground and background). Colors can be one of sixteen specified by your terminal, a 24-bit hex color code, `none`, or `reset`.
+After the colors, optionally specify modifiers separated by semicolons:
 
-After the colors, you can optionally specify modifiers separated by a semicolon. A list of modifiers is below:
+`bold`, `crossed_out`, `dim`, `hidden`, `italic`, `rapid_blink`, `slow_blink`, `reversed`, `underlined`
 
-- `bold`
-- `crossed_out`
-- `dim`
-- `hidden`
-- `italic`
-- `rapid_blink`
-- `slow_blink`
-- `reversed`
-- `underlined`
+Examples:
 
-Some examples:
-
-- `blue:white;italic` specifies italic blue text on a white background.
-- `none;italic;bold;underlined` specifies underlined, italicized, and bolded text with no set color or background.
-- `00ff00:000000` specifies text of color `#00ff00` (pure green) on a background of `#000000` (pure black).
-
-In [extended Backus-Naur form](https://en.wikipedia.org/wiki/Extended_Backus%E2%80%93Naur_form):
-
-```ebnf
-style     = colors, { ";", modifier }, [ ";" ] ;
-
-colors    = color, [ ":", color ] ;
-color     = "none"
-          | "reset"
-          | "black"
-          | "white"
-          | "red"
-          | "green"
-          | "yellow"
-          | "blue"
-          | "magenta"
-          | "cyan"
-          | "gray"
-          | "darkgray"
-          | "lightred"
-          | "lightgreen"
-          | "lightyellow"
-          | "lightblue"
-          | "lightmagenta"
-          | "lightcyan"
-          | 6 * hex digit ;
-hex digit = ? hexadecimal digit; 0-9, a-f, and A-F ? ;
-
-modifier  = "bold"
-          | "crossed_out"
-          | "dim"
-          | "hidden"
-          | "italic"
-          | "rapid_blink"
-          | "slow_blink"
-          | "reversed"
-          | "underlined" ;
-```
+- `blue:white;italic` -- italic blue text on a white background
+- `none;bold;underlined` -- bold underlined text with no set color
+- `00ff00:000000` -- green text on a black background
 
 ### border types
 
-The following border types are supported in the config file.
-
-- `plain`
-- `rounded` (default)
-- `double`
-- `thick`
-- `quadrantinside`
-- `quadrantoutside`
-
-If you're familiar with [serde](https://serde.rs), you can also read [the deserialization code](./src/config.rs).
+`plain`, `rounded` (default), `double`, `thick`, `quadrantinside`, `quadrantoutside`

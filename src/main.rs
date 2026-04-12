@@ -75,7 +75,7 @@ struct Opt {
     #[arg(long, requires = "contents")]
     raw: bool,
 
-    /// Display all UTF-8 but skip non-typeable characters during typing
+    /// Display all but skip non-ASCII characters during typing
     #[arg(long)]
     ascii: bool,
 
