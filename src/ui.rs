@@ -468,7 +468,13 @@ impl ThemedWidget for &results::Results {
                 self.missed_words
                     .iter()
                     .take(info_chunks[2].height.saturating_sub(2) as usize)
-                    .map(|w| Line::from(format!("- {}", w))),
+                    .map(|(w, count)| {
+                        if *count > 1 {
+                            Line::from(format!("- {} (x{})", w, count))
+                        } else {
+                            Line::from(format!("- {}", w))
+                        }
+                    }),
             );
         }
         let missed = Paragraph::new(missed_text).block(

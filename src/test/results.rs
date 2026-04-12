@@ -59,7 +59,7 @@ pub struct AccuracyData {
 pub struct Results {
     pub timing: TimingData,
     pub accuracy: AccuracyData,
-    pub missed_words: Vec<String>,
+    pub missed_words: Vec<(String, usize)>,
     pub is_repeat: bool,
 }
 
@@ -163,10 +163,22 @@ fn calc_accuracy(events: &[&super::TestEvent]) -> AccuracyData {
     acc
 }
 
-fn calc_missed_words(test: &Test) -> Vec<String> {
-    test.words
-        .iter()
-        .filter(|word| word.events.iter().any(is_missed_word_event))
-        .map(|word| word.text.clone())
-        .collect()
+fn calc_missed_words(test: &Test) -> Vec<(String, usize)> {
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    let mut order: Vec<String> = Vec::new();
+    for word in &test.words {
+        if word.events.iter().any(is_missed_word_event) {
+            let count = counts.entry(word.text.clone()).or_insert_with(|| {
+                order.push(word.text.clone());
+                0
+            });
+            *count += 1;
+        }
+    }
+    let mut result: Vec<_> = order.into_iter().map(|w| {
+        let count = counts[&w];
+        (w, count)
+    }).collect();
+    result.sort_by(|a, b| b.1.cmp(&a.1));
+    result
 }

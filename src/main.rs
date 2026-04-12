@@ -388,7 +388,7 @@ fn main() -> io::Result<()> {
                             // repeat each missed word 5 times
                             let mut practice_words: Vec<String> = (result.missed_words)
                                 .iter()
-                                .flat_map(|w| vec![w.clone(); 5])
+                                .flat_map(|(w, _)| vec![w.clone(); 5])
                                 .collect();
                             practice_words.shuffle(&mut thread_rng());
                             state = State::Test(Test::new(
