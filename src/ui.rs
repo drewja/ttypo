@@ -120,7 +120,7 @@ impl ThemedWidget for &Test {
         buf.set_line(chunks[2].x, chunks[2].y, &bar_line, chunks[2].width);
 
         let target_lines: Vec<Line> = {
-            let words = words_to_spans(&self.words, self.current_word, theme, self.qwerty);
+            let words = words_to_spans(&self.words, self.current_word, theme, self.ascii);
 
             if !self.lines.is_empty() {
                 // File mode: preserve original line structure with indentation
@@ -193,16 +193,16 @@ fn words_to_spans<'a>(
     words: &'a [TestWord],
     current_word: usize,
     theme: &'a Theme,
-    qwerty: bool,
+    ascii: bool,
 ) -> Vec<Vec<Span<'a>>> {
     let mut spans = Vec::new();
 
     for word in &words[..current_word] {
-        let parts = split_typed_word(word, qwerty);
+        let parts = split_typed_word(word, ascii);
         spans.push(word_parts_to_spans(parts, theme));
     }
 
-    let parts_current = split_current_word(&words[current_word], qwerty);
+    let parts_current = split_current_word(&words[current_word], ascii);
     spans.push(word_parts_to_spans(parts_current, theme));
 
     for word in &words[current_word + 1..] {
@@ -225,7 +225,7 @@ enum Status {
     Skipped,
 }
 
-fn split_current_word(word: &TestWord, qwerty: bool) -> Vec<(String, Status)> {
+fn split_current_word(word: &TestWord, ascii: bool) -> Vec<(String, Status)> {
     use super::test::is_typeable;
 
     let mut parts = Vec::new();
@@ -234,8 +234,8 @@ fn split_current_word(word: &TestWord, qwerty: bool) -> Vec<(String, Status)> {
 
     let mut progress = word.progress.chars();
     for tc in word.text.chars() {
-        // In qwerty mode, non-typeable chars are displayed but skipped over
-        if qwerty && !is_typeable(tc) {
+        // In ascii mode, non-typeable chars are displayed but skipped over
+        if ascii && !is_typeable(tc) {
             let status = Status::Skipped;
             if status == cur_status {
                 cur_string.push(tc);
@@ -286,7 +286,7 @@ fn split_current_word(word: &TestWord, qwerty: bool) -> Vec<(String, Status)> {
     parts
 }
 
-fn split_typed_word(word: &TestWord, qwerty: bool) -> Vec<(String, Status)> {
+fn split_typed_word(word: &TestWord, ascii: bool) -> Vec<(String, Status)> {
     use super::test::is_typeable;
 
     let mut parts = Vec::new();
@@ -295,7 +295,7 @@ fn split_typed_word(word: &TestWord, qwerty: bool) -> Vec<(String, Status)> {
 
     let mut progress = word.progress.chars();
     for tc in word.text.chars() {
-        if qwerty && !is_typeable(tc) {
+        if ascii && !is_typeable(tc) {
             let status = Status::Skipped;
             if status == cur_status {
                 cur_string.push(tc);
@@ -485,26 +485,48 @@ impl ThemedWidget for &results::Results {
         );
         missed.render(info_chunks[2], buf);
 
-        let wpm_sma: Vec<(f64, f64)> = self
+        // Scale the smoothing window so long tests produce a clean line
+        let chart_width = res_chunks[1].width as usize;
+        let num_events = self.timing.per_event.len();
+        let sma_width = if chart_width > 0 && num_events > chart_width * 2 {
+            num_events / chart_width
+        } else {
+            WPM_SMA_WIDTH
+        }
+        .max(WPM_SMA_WIDTH);
+
+        let wpm_sma_full: Vec<(f64, f64)> = self
             .timing
             .per_event
-            .windows(WPM_SMA_WIDTH)
+            .windows(sma_width)
             .enumerate()
             .map(|(i, window)| {
                 (
-                    (i + WPM_SMA_WIDTH) as f64,
+                    (i + sma_width) as f64,
                     window.len() as f64 / window.iter().copied().sum::<f64>() * WPM_PER_CPS,
                 )
             })
             .collect();
 
-        // Points where a mistake occurred
-        let mistake_points: Vec<(f64, f64)> = wpm_sma
+        // Downsample to at most chart_width points
+        let step = if chart_width > 0 {
+            (wpm_sma_full.len() / chart_width).max(1)
+        } else {
+            1
+        };
+        let wpm_sma: Vec<(f64, f64)> = wpm_sma_full
+            .iter()
+            .step_by(step)
+            .copied()
+            .collect();
+
+        // Plot a point on the SMA curve for each missed word
+        let missed = &self.timing.missed_word_event_indices;
+        let mistake_points: Vec<(f64, f64)> = wpm_sma_full
             .iter()
             .filter(|(x, _)| {
-                let idx = *x as usize;
-                idx < self.timing.per_event_correct.len()
-                    && !self.timing.per_event_correct[idx]
+                let idx = (*x as usize).saturating_sub(sma_width);
+                missed.contains(&idx)
             })
             .copied()
             .collect();
@@ -522,7 +544,7 @@ impl ThemedWidget for &results::Results {
 
             let mut wpm_datasets = vec![Dataset::default()
                 .name("WPM")
-                .marker(Marker::Dot)
+                .marker(Marker::Braille)
                 .graph_type(GraphType::Line)
                 .style(theme.results_chart)
                 .data(&wpm_sma)];
@@ -531,7 +553,7 @@ impl ThemedWidget for &results::Results {
                 wpm_datasets.push(
                     Dataset::default()
                         .name("Mistakes")
-                        .marker(Marker::Dot)
+                        .marker(Marker::Braille)
                         .graph_type(GraphType::Scatter)
                         .style(theme.results_chart_mistakes)
                         .data(&mistake_points),
@@ -551,7 +573,7 @@ impl ThemedWidget for &results::Results {
                 .y_axis(
                     Axis::default()
                         .title(Span::styled(
-                            "WPM (10-keypress rolling average)",
+                            format!("WPM ({}-keypress rolling average)", sma_width),
                             theme.results_chart_y,
                         ))
                         .bounds([wpm_sma_min, wpm_sma_max])
@@ -659,7 +681,7 @@ mod tests {
         }
 
         #[test]
-        fn typed_word_qwerty_skips_unicode() {
+        fn typed_word_ascii_skips_unicode() {
             // Word "café" typed as "caf" - the é is shown as Skipped (yellow)
             let mut word = TestWord::from("caf\u{00e9}");
             word.progress = "caf".to_string();
@@ -673,7 +695,7 @@ mod tests {
         }
 
         #[test]
-        fn current_word_qwerty_skips_unicode() {
+        fn current_word_ascii_skips_unicode() {
             // Word "café", user has typed "ca", cursor should be on 'f'
             let mut word = TestWord::from("caf\u{00e9}");
             word.progress = "ca".to_string();

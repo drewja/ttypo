@@ -4,16 +4,15 @@ use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::fmt;
 use std::time::Instant;
 
-/// Returns true if a character is typeable on a standard US QWERTY keyboard
-/// (printable ASCII: space through tilde, 0x20-0x7E).
+/// Returns true if a character is printable ASCII (0x20-0x7E).
 pub fn is_typeable(c: char) -> bool {
     c.is_ascii() && !c.is_ascii_control()
 }
 
 /// Returns the typeable portion of `text`.
-/// When `qwerty` is false the full text is returned unchanged.
-fn target_text(text: &str, qwerty: bool) -> String {
-    if qwerty {
+/// When `ascii` is false the full text is returned unchanged.
+fn target_text(text: &str, ascii: bool) -> String {
+    if ascii {
         text.chars().filter(|c| is_typeable(*c)).collect()
     } else {
         text.to_string()
@@ -84,7 +83,7 @@ pub struct Test {
     /// Original line layout for raw/file mode (empty = word-wrap mode).
     pub lines: Vec<DisplayLine>,
     /// When true, non-typeable characters are skipped during typing.
-    pub qwerty: bool,
+    pub ascii: bool,
     pub start_time: Option<Instant>,
 }
 
@@ -95,7 +94,7 @@ impl Test {
         sudden_death_enabled: bool,
         backspace_enabled: bool,
         lines: Vec<DisplayLine>,
-        qwerty: bool,
+        ascii: bool,
     ) -> Self {
         let mut test = Self {
             words: words.into_iter().map(TestWord::from).collect(),
@@ -105,7 +104,7 @@ impl Test {
             sudden_death_enabled,
             backspace_enabled,
             lines,
-            qwerty,
+            ascii,
             start_time: None,
         };
         test.skip_non_typeable_words();
@@ -145,9 +144,9 @@ impl Test {
             self.start_time = Some(Instant::now());
         }
 
-        let qwerty = self.qwerty;
+        let ascii = self.ascii;
         let word = &mut self.words[self.current_word];
-        let target = target_text(&word.text, qwerty);
+        let target = target_text(&word.text, ascii);
         match key.code {
             KeyCode::Char(' ') | KeyCode::Enter => {
                 if target.chars().nth(word.progress.len()) == Some(' ') {
@@ -249,7 +248,7 @@ impl Test {
     }
 
     fn skip_non_typeable_words(&mut self) {
-        if !self.qwerty || self.complete {
+        if !self.ascii || self.complete {
             return;
         }
         loop {
@@ -270,14 +269,14 @@ mod tests {
     use super::*;
     use crossterm::event::KeyEventState;
 
-    fn make_test(words: &[&str], lines: Vec<DisplayLine>, qwerty: bool) -> Test {
+    fn make_test(words: &[&str], lines: Vec<DisplayLine>, ascii: bool) -> Test {
         Test::new(
             words.iter().map(|s| s.to_string()).collect(),
             true,
             false,
             true,
             lines,
-            qwerty,
+            ascii,
         )
     }
 
@@ -354,19 +353,19 @@ mod tests {
     }
 
     #[test]
-    fn target_text_without_qwerty() {
+    fn target_text_without_ascii() {
         assert_eq!(target_text("caf\u{00e9}", false), "caf\u{00e9}");
     }
 
     #[test]
-    fn target_text_with_qwerty() {
+    fn target_text_with_ascii() {
         assert_eq!(target_text("caf\u{00e9}", true), "caf");
         assert_eq!(target_text("hello\u{2014}world", true), "helloworld");
         assert_eq!(target_text("\u{201c}quoted\u{201d}", true), "quoted");
     }
 
     #[test]
-    fn qwerty_skips_unicode_in_typing() {
+    fn ascii_skips_unicode_in_typing() {
         let mut test = make_test(&["caf\u{00e9}"], Vec::new(), true);
         for c in "caf".chars() {
             test.handle_key(press(c));
@@ -375,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    fn qwerty_space_advances_past_unicode_word() {
+    fn ascii_space_advances_past_unicode_word() {
         let mut test = make_test(&["caf\u{00e9}", "ok"], Vec::new(), true);
         for c in "caf".chars() {
             test.handle_key(press(c));
@@ -385,21 +384,21 @@ mod tests {
     }
 
     #[test]
-    fn qwerty_auto_skips_all_unicode_word() {
+    fn ascii_auto_skips_all_unicode_word() {
         let test = make_test(&["\u{2014}\u{2014}", "ok"], Vec::new(), true);
         // entirely non-typeable word is auto-skipped at construction
         assert_eq!(test.current_word, 1);
     }
 
     #[test]
-    fn qwerty_auto_skips_chain_of_unicode_words() {
+    fn ascii_auto_skips_chain_of_unicode_words() {
         let test = make_test(&["\u{2014}", "\u{00e9}\u{00e9}", "ok"], Vec::new(), true);
         // both non-typeable words skipped at construction
         assert_eq!(test.current_word, 2);
     }
 
     #[test]
-    fn qwerty_auto_skips_after_space() {
+    fn ascii_auto_skips_after_space() {
         let mut test = make_test(&["hi", "\u{2014}", "ok"], Vec::new(), true);
         for c in "hi".chars() {
             test.handle_key(press(c));
@@ -410,13 +409,13 @@ mod tests {
     }
 
     #[test]
-    fn qwerty_all_non_typeable_completes() {
+    fn ascii_all_non_typeable_completes() {
         let test = make_test(&["\u{2014}", "\u{00e9}"], Vec::new(), true);
         assert!(test.complete);
     }
 
     #[test]
-    fn without_qwerty_unicode_must_be_typed() {
+    fn without_ascii_unicode_must_be_typed() {
         let mut test = make_test(&["caf\u{00e9}"], Vec::new(), false);
         for c in "caf".chars() {
             test.handle_key(press(c));
@@ -425,9 +424,9 @@ mod tests {
     }
 
     #[test]
-    fn without_qwerty_no_auto_skip() {
+    fn without_ascii_no_auto_skip() {
         let test = make_test(&["\u{2014}", "ok"], Vec::new(), false);
-        // without qwerty, no auto-skipping
+        // without ascii, no auto-skipping
         assert_eq!(test.current_word, 0);
     }
 }

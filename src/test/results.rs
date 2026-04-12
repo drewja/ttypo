@@ -47,7 +47,7 @@ pub struct TimingData {
     // Instead of storing WPM, we store CPS (clicks per second)
     pub overall_cps: f64,
     pub per_event: Vec<f64>,
-    pub per_event_correct: Vec<bool>,
+    pub missed_word_event_indices: Vec<usize>,
     pub per_key: HashMap<KeyEvent, f64>,
 }
 
@@ -68,8 +68,31 @@ impl From<&Test> for Results {
         let events: Vec<&super::TestEvent> =
             test.words.iter().flat_map(|w| w.events.iter()).collect();
 
+        // Track which event indices mark the end of a missed word.
+        // The per_event array uses windows(2) so index i corresponds to
+        // events[i+1]. We record the per_event index of the last event
+        // in each word that had mistakes.
+        let mut missed_indices = Vec::new();
+        let mut event_offset: usize = 0;
+        for word in &test.words {
+            let word_len = word.events.len();
+            if word_len > 0 && word.events.iter().any(is_missed_word_event) {
+                // last event of this word is at event_offset + word_len - 1,
+                // which maps to per_event index (event_offset + word_len - 2)
+                // since per_event uses windows(2) starting from index 0
+                let last_event = event_offset + word_len - 1;
+                if last_event > 0 {
+                    missed_indices.push(last_event - 1);
+                }
+            }
+            event_offset += word_len;
+        }
+
+        let mut timing = calc_timing(&events);
+        timing.missed_word_event_indices = missed_indices;
+
         Self {
-            timing: calc_timing(&events),
+            timing,
             accuracy: calc_accuracy(&events),
             missed_words: calc_missed_words(test),
             is_repeat: false,
@@ -81,7 +104,7 @@ fn calc_timing(events: &[&super::TestEvent]) -> TimingData {
     let mut timing = TimingData {
         overall_cps: -1.0,
         per_event: Vec::new(),
-        per_event_correct: Vec::new(),
+        missed_word_event_indices: Vec::new(),
         per_key: HashMap::new(),
     };
 
@@ -96,9 +119,6 @@ fn calc_timing(events: &[&super::TestEvent]) -> TimingData {
 
         if let Some(event_dur) = event_dur {
             timing.per_event.push(event_dur);
-            timing
-                .per_event_correct
-                .push(win[1].correct != Some(false));
 
             let key = keys.entry(win[1].key).or_insert((0.0, 0));
             key.0 += event_dur;

@@ -75,9 +75,9 @@ struct Opt {
     #[arg(long, requires = "contents")]
     raw: bool,
 
-    /// Display all UTF-8 but skip non-ASCII-printable characters during typing
+    /// Display all UTF-8 but skip non-typeable characters during typing
     #[arg(long)]
-    qwerty: bool,
+    ascii: bool,
 
     #[command(subcommand)]
     command: Option<Command>,
@@ -331,7 +331,7 @@ fn main() -> io::Result<()> {
         opt.sudden_death,
         !opt.no_backspace,
         lines,
-        opt.qwerty,
+        opt.ascii,
     ));
 
     state.render_into(&mut terminal, &config)?;
@@ -402,7 +402,7 @@ fn main() -> io::Result<()> {
                         opt.sudden_death,
                         !opt.no_backspace,
                         new_lines,
-                        opt.qwerty,
+                        opt.ascii,
                     ));
                 }
                 Event::Key(KeyEvent {
@@ -426,7 +426,7 @@ fn main() -> io::Result<()> {
                         opt.sudden_death,
                         !opt.no_backspace,
                         Vec::new(),
-                        opt.qwerty,
+                        opt.ascii,
                     ));
                 }
                 Event::Key(KeyEvent {
@@ -458,7 +458,7 @@ mod tests {
     use super::*;
     use std::io::Write;
 
-    fn make_opt(path: PathBuf, raw: bool, qwerty: bool) -> Opt {
+    fn make_opt(path: PathBuf, raw: bool, ascii: bool) -> Opt {
         Opt {
             contents: Some(path),
             debug: false,
@@ -471,7 +471,7 @@ mod tests {
             sudden_death: false,
             no_backspace: false,
             raw,
-            qwerty,
+            ascii,
             command: None,
         }
     }
