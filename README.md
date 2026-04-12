@@ -6,7 +6,7 @@ A terminal-based typing test built with Rust and Ratatui. Forked from [max-niede
 
 ## added features
 
-- **Raw mode** (`--raw`) - preserves display of original line breaks, indentation, and empty lines from input files
+- **File mode** - passing a file preserves original line breaks, indentation, and empty lines
 - **ASCII mode** (`--ascii`) - skips non-ascii characters during typing, highlighted in yellow
 - **Live status bar** - shows WPM, elapsed time, and word progress while typing
 - **Full-width progress bar** - visual progress indicator below the prompt
@@ -15,7 +15,7 @@ A terminal-based typing test built with Rust and Ratatui. Forked from [max-niede
 - **Repeat test** - press `r` on results to repeat the test
 - **Mistake markers on chart** - red dots on the WPM chart show when errors occurred
 - **theme** - richer default color scheme using RGB values
-- **Stdin support** - pipe text in with `-` (e.g. `man ls | ttyper --raw --ascii -`)
+- **Stdin support** - pipe text in with `-` (e.g. `man ls | ttyper --ascii -`)
 
 ## installation
 
@@ -41,7 +41,6 @@ Options:
       --no-backtrack          Disable backtracking to completed words
       --sudden-death          Enable sudden death mode to restart on first error
       --no-backspace          Disable backspace
-      --raw                   Treat input as raw text: split into words and preserve line layout
       --ascii                 Display all but skip non-ASCII characters during typing
   -h, --help                  Print help
   -V, --version               Print version
@@ -55,10 +54,9 @@ Options:
 | `ttyper -w 100`                          |               100 of the 200 most common English words |
 | `ttyper -w 100 -l english1000`           |              100 of the 1000 most common English words |
 | `ttyper --language-file lang`            |                   50 random words from the file `lang` |
-| `ttyper text.txt`                        |               contents of `text.txt` split at newlines |
-| `ttyper --raw text.txt`                  |       contents of `text.txt` with original line layout |
-| `ttyper --raw --ascii source.rs`         |      type a source file, skipping non-ASCII characters |
-| `man ls \| ttyper --raw --ascii -`       |                  practice typing a man page from stdin |
+| `ttyper text.txt`                        |       contents of `text.txt` with original line layout |
+| `ttyper --ascii source.rs`               |      type a source file, skipping non-ASCII characters |
+| `man ls \| ttyper --ascii -`             |                  practice typing a man page from stdin |
 
 ## languages
 
