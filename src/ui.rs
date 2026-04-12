@@ -60,12 +60,7 @@ impl ThemedWidget for &Test {
             ])
             .split(area)[1];
 
-        // Use flexible prompt height in file mode so more text is visible
-        let prompt_constraint = if !self.lines.is_empty() {
-            Constraint::Min(6)
-        } else {
-            Constraint::Length(6)
-        };
+        let prompt_constraint = Constraint::Min(6);
 
         let chunks = Layout::default()
             .direction(Direction::Vertical)
