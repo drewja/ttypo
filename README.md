@@ -2,7 +2,7 @@
 
 A terminal-based typing test built with Rust and Ratatui. Forked from [max-niederman/ttyper](https://github.com/max-niederman/ttyper).
 
-![Recording](./resources/recording.gif)
+<!-- ![Recording](./resources/recording.gif) -->
 
 ## added features
 
