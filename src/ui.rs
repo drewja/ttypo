@@ -178,7 +178,8 @@ impl ThemedWidget for &Test {
                 Block::default()
                     .borders(Borders::ALL)
                     .border_type(theme.border_type)
-                    .border_style(theme.prompt_border),
+                    .border_style(theme.prompt_border)
+                    .padding(ratatui::widgets::Padding::horizontal(1)),
             );
         target.render(chunks[1], buf);
     }
@@ -420,7 +421,8 @@ impl ThemedWidget for &results::Results {
                 .title(Span::styled("Overview", theme.title))
                 .borders(Borders::ALL)
                 .border_type(theme.border_type)
-                .border_style(theme.results_overview_border),
+                .border_style(theme.results_overview_border)
+                .padding(ratatui::widgets::Padding::horizontal(1)),
         );
         overview.render(info_chunks[0], buf);
 
@@ -456,7 +458,8 @@ impl ThemedWidget for &results::Results {
                 .title(Span::styled("Worst Keys", theme.title))
                 .borders(Borders::ALL)
                 .border_type(theme.border_type)
-                .border_style(theme.results_worst_keys_border),
+                .border_style(theme.results_worst_keys_border)
+                .padding(ratatui::widgets::Padding::horizontal(1)),
         );
         worst.render(info_chunks[1], buf);
 
@@ -482,7 +485,8 @@ impl ThemedWidget for &results::Results {
                 .title(Span::styled("Missed Words", theme.title))
                 .borders(Borders::ALL)
                 .border_type(theme.border_type)
-                .border_style(theme.results_missed_words_border),
+                .border_style(theme.results_missed_words_border)
+                .padding(ratatui::widgets::Padding::horizontal(1)),
         );
         missed.render(info_chunks[2], buf);
 
@@ -564,12 +568,19 @@ impl ThemedWidget for &results::Results {
             let y_label_min = wpm_sma_min as u16;
             let y_label_max = (wpm_sma_max as u16).max(y_label_min + 6);
 
+            let total_secs = self.timing.per_event.iter().sum::<f64>() as u64;
+            let x_labels = vec![
+                Span::raw("0:00"),
+                Span::raw(format!("{}:{:02}", total_secs / 60, total_secs % 60)),
+            ];
+
             let wpm_chart = Chart::new(wpm_datasets)
                 .block(Block::default().title(vec![Span::styled("Chart", theme.title)]))
                 .x_axis(
                     Axis::default()
-                        .title(Span::styled("Keypresses", theme.results_chart_x))
-                        .bounds([0.0, self.timing.per_event.len() as f64]),
+                        .title(Span::styled("Time", theme.results_chart_x))
+                        .bounds([0.0, self.timing.per_event.len() as f64])
+                        .labels(x_labels),
                 )
                 .y_axis(
                     Axis::default()
