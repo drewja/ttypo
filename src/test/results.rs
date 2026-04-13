@@ -61,6 +61,7 @@ pub struct Results {
     pub accuracy: AccuracyData,
     pub missed_words: Vec<(String, usize)>,
     pub is_repeat: bool,
+    pub completed: bool,
 }
 
 impl From<&Test> for Results {
@@ -96,6 +97,7 @@ impl From<&Test> for Results {
             accuracy: calc_accuracy(&events),
             missed_words: calc_missed_words(test),
             is_repeat: false,
+            completed: test.complete,
         }
     }
 }

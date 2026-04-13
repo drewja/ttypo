@@ -298,6 +298,7 @@ fn main() -> io::Result<()> {
     )?;
     terminal.clear()?;
 
+    let mut paused_test: Option<Test> = None;
     let mut state = State::Test(Test::new(
         contents,
         !opt.no_backtrack,
@@ -334,6 +335,7 @@ fn main() -> io::Result<()> {
                 State::Test(ref test) => {
                     let mut results = Results::from(test);
                     results.is_repeat = is_file_mode;
+                    paused_test = Some(test.clone());
                     state = State::Results(results);
                 }
                 State::Results(_) => break,
@@ -348,6 +350,7 @@ fn main() -> io::Result<()> {
                     if test.complete {
                         let mut results = Results::from(&*test);
                         results.is_repeat = is_file_mode;
+                        paused_test = None;
                         state = State::Results(results);
                     }
                 }
@@ -399,6 +402,11 @@ fn main() -> io::Result<()> {
                                 Vec::new(),
                                 opt.ascii,
                             ));
+                        }
+                        'c' => {
+                            if let Some(test) = paused_test.take() {
+                                state = State::Test(test);
+                            }
                         }
                         'q' => break,
                         _ => {}

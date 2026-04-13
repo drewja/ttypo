@@ -19,6 +19,7 @@ fn target_text(text: &str, ascii: bool) -> String {
     }
 }
 
+#[derive(Clone)]
 pub struct TestEvent {
     pub time: Instant,
     pub key: KeyEvent,
@@ -38,7 +39,7 @@ impl fmt::Debug for TestEvent {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct TestWord {
     pub text: String,
     pub progress: String,
@@ -72,7 +73,7 @@ pub struct DisplayLine {
     pub word_count: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Test {
     pub words: Vec<TestWord>,
     pub current_word: usize,

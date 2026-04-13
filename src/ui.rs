@@ -381,21 +381,25 @@ impl ThemedWidget for &results::Results {
             ])
             .split(res_chunks[0]);
 
-        let msg = match (self.is_repeat, self.missed_words.is_empty()) {
-            (true, true) => "Press 'q' to quit or 'r' to repeat the test",
-            (true, false) => {
-                "Press 'q' to quit, 'r' to repeat the test or 'p' to practice missed words"
-            }
-            (false, true) => "Press 'q' to quit or 'r' for another test",
-            (false, false) => {
-                "Press 'q' to quit, 'r' for another test or 'p' to practice missed words"
-            }
-        };
+        let mut parts = vec!["'q' quit"];
+        if !self.completed {
+            parts.push("'c' continue");
+        }
+        if self.is_repeat {
+            parts.push("'r' repeat");
+        } else {
+            parts.push("'r' new test");
+        }
+        if !self.missed_words.is_empty() {
+            parts.push("'p' practice missed");
+        }
+        let msg = parts.join(" | ");
 
+        let msg_len = msg.len();
         let exit = Line::from(Span::styled(msg, theme.results_restart_prompt));
         let x_offset = chunks[1]
             .width
-            .saturating_sub(msg.len() as u16)
+            .saturating_sub(msg_len as u16)
             / 2;
         buf.set_line(chunks[1].x + x_offset, chunks[1].y, &exit, chunks[1].width);
 
@@ -430,7 +434,7 @@ impl ThemedWidget for &results::Results {
             .accuracy
             .per_key
             .iter()
-            .filter(|(key, _)| matches!(key.code, KeyCode::Char(_)))
+            .filter(|(key, _)| matches!(key.code, KeyCode::Char(c) if c != ' '))
             .collect();
         worst_keys.sort_unstable_by_key(|x| x.1);
 
@@ -578,7 +582,7 @@ impl ThemedWidget for &results::Results {
                 .block(Block::default().title(vec![Span::styled("Chart", theme.title)]))
                 .x_axis(
                     Axis::default()
-                        .title(Span::styled("Time", theme.results_chart_x))
+                        .title(Span::raw(""))
                         .bounds([0.0, self.timing.per_event.len() as f64])
                         .labels(x_labels),
                 )
