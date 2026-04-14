@@ -1,13 +1,13 @@
 [package]
-name = "ttyper"
+name = "ttypo"
 description = "Terminal-based typing test."
-version = "1.6.0"
+version = "0.1.0"
 readme = "README.md"
-repository = "https://github.com/max-niederman/ttyper.git"
-homepage = "https://github.com/max-niederman/ttyper"
+repository = "https://github.com/drewja/ttypo"
+homepage = "https://github.com/drewja/ttypo"
 license = "MIT"
-authors = ["Max Niederman <max@maxniederman.com>"]
-edition = "2021"
+authors = ["Andrew Arendt"]
+edition = "2024"
 
 [dependencies]
 clap = { version = "^4.5", features = ["derive"] }

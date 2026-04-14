@@ -1,10 +1,10 @@
-# ttyper
+# ttypo
 
-A terminal-based typing test built with Rust and Ratatui. Forked from [max-niederman/ttyper](https://github.com/max-niederman/ttyper).
+A terminal-based typing test built with Rust and Ratatui. Originally forked from [max-niederman/ttyper](https://github.com/max-niederman/ttyper).
 
 <!-- ![Recording](./resources/recording.gif) -->
 
-## added features
+## features
 
 - **File mode** - passing a file preserves original line breaks, indentation, and empty lines
 - **ASCII mode** (`--ascii`) - skips non-ascii characters during typing, highlighted in yellow
@@ -13,20 +13,21 @@ A terminal-based typing test built with Rust and Ratatui. Forked from [max-niede
 - **Missed words panel** - results screen shows which words had errors
 - **Practice missed words** - press `p` on results to practice missed words
 - **Repeat test** - press `r` on results to repeat the test
+- **Pause/resume** - press `esc` to pause, `c` to continue
 - **Mistake markers on chart** - red dots on the WPM chart show when errors occurred
-- **theme** - richer default color scheme using RGB values
-- **Stdin support** - pipe text in with `-` (e.g. `man ls | ttyper --ascii -`)
+- **Theme** - richer default color scheme using RGB values
+- **Stdin support** - pipe text in with `-` (e.g. `man ls | ttypo --ascii -`)
 
 ## installation
 
 ```bash
-cargo install --path .
+cargo install ttypo
 ```
 
 ## usage
 
 ```
-ttyper [OPTIONS] [PATH] [COMMAND]
+ttypo [OPTIONS] [PATH] [COMMAND]
 
 Arguments:
   [PATH]  Read test contents from the specified file, or "-" for stdin
@@ -50,13 +51,13 @@ Options:
 
 | command                                  |                                          test contents |
 | :--------------------------------------- | -----------------------------------------------------: |
-| `ttyper`                                 |                50 of the 200 most common english words |
-| `ttyper -w 100`                          |               100 of the 200 most common English words |
-| `ttyper -w 100 -l english1000`           |              100 of the 1000 most common English words |
-| `ttyper --language-file lang`            |                   50 random words from the file `lang` |
-| `ttyper text.txt`                        |       contents of `text.txt` with original line layout |
-| `ttyper --ascii source.rs`               |      type a source file, skipping non-ASCII characters |
-| `man ls \| ttyper --ascii -`             |                  practice typing a man page from stdin |
+| `ttypo`                                  |                50 of the 200 most common english words |
+| `ttypo -w 100`                           |               100 of the 200 most common English words |
+| `ttypo -w 100 -l english1000`            |              100 of the 1000 most common English words |
+| `ttypo --language-file lang`             |                   50 random words from the file `lang` |
+| `ttypo text.txt`                         |       contents of `text.txt` with original line layout |
+| `ttypo --ascii source.rs`                |      type a source file, skipping non-ASCII characters |
+| `man ls \| ttypo --ascii -`              |                  practice typing a man page from stdin |
 
 ## languages
 
@@ -104,11 +105,11 @@ The following languages are available by default:
 | `russian1000`        |      1000 most common Russian words |
 | `russian10000`       |     10000 most common Russian words |
 
-Additional languages can be added by creating a file in the config language directory with a word on each line. On Linux, the config directory is `$HOME/.config/ttyper/language`; on macOS it's `$HOME/Library/Application Support/ttyper/language`.
+Additional languages can be added by creating a file in the config language directory with a word on each line. On Linux, the config directory is `$HOME/.config/ttypo/language`; on macOS it's `$HOME/Library/Application Support/ttypo/language`.
 
 ## config
 
-Configuration is specified by `config.toml` in the config directory (e.g. `$HOME/.config/ttyper/config.toml`).
+Configuration is specified by `config.toml` in the config directory (e.g. `$HOME/.config/ttypo/config.toml`).
 
 Default values:
 

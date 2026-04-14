@@ -210,7 +210,7 @@ impl Opt {
     fn config_dir(&self) -> PathBuf {
         dirs::config_dir()
             .expect("Failed to find config directory.")
-            .join("ttyper")
+            .join("ttypo")
     }
 
     /// Language directory under config directory
@@ -258,7 +258,7 @@ fn main() -> io::Result<()> {
     }
 
     if let Some(Command::Completions { shell }) = opt.command {
-        generate(shell, &mut Opt::command(), "ttyper", &mut io::stdout());
+        generate(shell, &mut Opt::command(), "ttypo", &mut io::stdout());
         return Ok(());
     }
 

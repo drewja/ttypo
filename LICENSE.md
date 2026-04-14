@@ -1,5 +1,6 @@
 MIT License
 
+Copyright (c) 2026 Andrew Arendt
 Copyright (c) 2022 Max Niederman
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
