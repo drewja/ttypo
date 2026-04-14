@@ -7,6 +7,8 @@ repository = "https://github.com/drewja/ttypo"
 homepage = "https://github.com/drewja/ttypo"
 license = "MIT"
 authors = ["Andrew Arendt"]
+keywords = ["typing", "terminal", "tui", "practice"]
+categories = ["command-line-utilities"]
 edition = "2024"
 
 [dependencies]

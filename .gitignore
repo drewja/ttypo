@@ -10,3 +10,7 @@ result
 # Editor
 .vim/
 .nvimrc
+.swp
+
+bugs
+todo
