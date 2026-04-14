@@ -12,8 +12,8 @@ use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute, terminal,
 };
-use rand::{seq::SliceRandom, thread_rng};
-use ratatui::{backend::CrosstermBackend, terminal::Terminal};
+use rand::seq::SliceRandom;
+use ratatui::{backend::CrosstermBackend, Terminal};
 use rust_embed::RustEmbed;
 use std::{
     ffi::OsString,
@@ -152,7 +152,7 @@ impl Opt {
                             .map(|f| f.data.into_owned())
                     })?;
 
-                let mut rng = thread_rng();
+                let mut rng = rand::rng();
 
                 let mut language: Vec<&str> = str::from_utf8(&bytes)
                     .expect("Language file had non-utf8 encoding.")
@@ -188,7 +188,7 @@ impl Opt {
     }
 
     /// Installed languages under config directory
-    fn languages(&self) -> io::Result<impl Iterator<Item = OsString>> {
+    fn languages(&self) -> io::Result<impl Iterator<Item = OsString> + use<>> {
         let builtin = Resources::iter().filter_map(|name| {
             name.strip_prefix("language/")
                 .map(ToOwned::to_owned)
@@ -225,20 +225,20 @@ enum State {
 }
 
 impl State {
-    fn render_into<B: ratatui::backend::Backend>(
+    fn render_into(
         &self,
-        terminal: &mut Terminal<B>,
+        terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
         config: &Config,
     ) -> io::Result<()> {
         match self {
             State::Test(test) => {
-                terminal.draw(|f| {
-                    f.render_widget(config.theme.apply_to(test), f.size());
+                terminal.draw(|f: &mut ratatui::Frame| {
+                    f.render_widget(config.theme.apply_to(test), f.area());
                 })?;
             }
             State::Results(results) => {
-                terminal.draw(|f| {
-                    f.render_widget(config.theme.apply_to(results), f.size());
+                terminal.draw(|f: &mut ratatui::Frame| {
+                    f.render_widget(config.theme.apply_to(results), f.area());
                 })?;
             }
         }
@@ -393,7 +393,7 @@ fn main() -> io::Result<()> {
                                 .iter()
                                 .flat_map(|(w, _)| vec![w.clone(); 5])
                                 .collect();
-                            practice_words.shuffle(&mut thread_rng());
+                            practice_words.shuffle(&mut rand::rng());
                             state = State::Test(Test::new(
                                 practice_words,
                                 !opt.no_backtrack,

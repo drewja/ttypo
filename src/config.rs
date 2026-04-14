@@ -112,15 +112,15 @@ impl Default for Theme {
 
             border_type: BorderType::Rounded,
 
-            prompt_correct: Style::default().fg(Color::Rgb(100, 200, 100)),
-            prompt_incorrect: Style::default().fg(Color::Rgb(230, 80, 80)),
-            prompt_untyped: Style::default().fg(Color::Rgb(90, 90, 90)),
+            prompt_correct: Style::default().fg(Color::Rgb(100, 120, 100)),
+            prompt_incorrect: Style::default().fg(Color::Rgb(200, 80, 80)),
+            prompt_untyped: Style::default().fg(Color::Rgb(200, 200, 200)),
 
             prompt_current_correct: Style::default()
-                .fg(Color::Rgb(120, 230, 120))
+                .fg(Color::Rgb(120, 180, 120))
                 .add_modifier(Modifier::BOLD),
             prompt_current_incorrect: Style::default()
-                .fg(Color::Rgb(255, 100, 80))
+                .fg(Color::Rgb(200, 100, 80))
                 .add_modifier(Modifier::BOLD),
             prompt_current_untyped: Style::default()
                 .fg(Color::Rgb(200, 200, 220))
