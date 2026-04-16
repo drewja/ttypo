@@ -86,6 +86,8 @@ pub struct Test {
     /// When true, non-typeable characters are skipped during typing.
     pub ascii: bool,
     pub start_time: Option<Instant>,
+    /// Label describing the source of the test contents (language name, filename, or "stdin").
+    pub source: String,
 }
 
 impl Test {
@@ -96,6 +98,7 @@ impl Test {
         backspace_enabled: bool,
         lines: Vec<DisplayLine>,
         ascii: bool,
+        source: String,
     ) -> Self {
         let mut test = Self {
             words: words.into_iter().map(TestWord::from).collect(),
@@ -107,6 +110,7 @@ impl Test {
             lines,
             ascii,
             start_time: None,
+            source,
         };
         test.skip_non_typeable_words();
         test
@@ -278,6 +282,7 @@ mod tests {
             true,
             lines,
             ascii,
+            String::new(),
         )
     }
 

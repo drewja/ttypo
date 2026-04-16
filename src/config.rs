@@ -3,8 +3,8 @@ use ratatui::{
     widgets::BorderType,
 };
 use serde::{
-    de::{self, IntoDeserializer},
     Deserialize,
+    de::{self, IntoDeserializer},
 };
 
 #[derive(Debug, Deserialize)]
@@ -212,7 +212,7 @@ where
                         return Err(E::invalid_value(
                             de::Unexpected::Str(modifier),
                             &"a style modifier",
-                        ))
+                        ));
                     }
                 });
             }

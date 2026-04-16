@@ -1,4 +1,4 @@
-use super::{is_missed_word_event, Test};
+use super::{Test, is_missed_word_event};
 
 use crossterm::event::KeyEvent;
 use std::collections::HashMap;
@@ -177,10 +177,13 @@ fn calc_missed_words(test: &Test) -> Vec<(String, usize)> {
             *count += 1;
         }
     }
-    let mut result: Vec<_> = order.into_iter().map(|w| {
-        let count = counts[&w];
-        (w, count)
-    }).collect();
+    let mut result: Vec<_> = order
+        .into_iter()
+        .map(|w| {
+            let count = counts[&w];
+            (w, count)
+        })
+        .collect();
     result.sort_by(|a, b| b.1.cmp(&a.1));
     result
 }

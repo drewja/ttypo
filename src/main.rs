@@ -3,17 +3,17 @@ mod test;
 mod ui;
 
 use config::Config;
-use test::{results::Results, DisplayLine, Test};
+use test::{DisplayLine, Test, results::Results};
 
 use clap::{CommandFactory, Parser, Subcommand};
-use clap_complete::{generate, Shell};
+use clap_complete::{Shell, generate};
 use crossterm::{
     self, cursor,
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute, terminal,
 };
 use rand::seq::SliceRandom;
-use ratatui::{backend::CrosstermBackend, Terminal};
+use ratatui::{Terminal, backend::CrosstermBackend};
 use rust_embed::RustEmbed;
 use std::{
     ffi::OsString,
@@ -282,6 +282,18 @@ fn main() -> io::Result<()> {
         std::process::exit(1);
     }
 
+    let source = match &opt.contents {
+        Some(path) if path.as_os_str() == "-" => "stdin".to_string(),
+        Some(path) => path
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string()),
+        None => opt
+            .language
+            .clone()
+            .unwrap_or_else(|| config.default_language.clone()),
+    };
+
     let is_file_mode = opt.contents.is_some();
     let saved_contents = if is_file_mode {
         Some((contents.clone(), lines.clone()))
@@ -306,6 +318,7 @@ fn main() -> io::Result<()> {
         !opt.no_backspace,
         lines,
         opt.ascii,
+        source.clone(),
     ));
 
     state.render_into(&mut terminal, &config)?;
@@ -364,14 +377,15 @@ fn main() -> io::Result<()> {
                 {
                     match c.to_ascii_lowercase() {
                         'r' => {
-                            let (new_contents, new_lines) =
-                                if let Some((ref c, ref l)) = saved_contents {
-                                    (c.clone(), l.clone())
-                                } else {
-                                    opt.gen_contents().expect(
+                            let (new_contents, new_lines) = if let Some((ref c, ref l)) =
+                                saved_contents
+                            {
+                                (c.clone(), l.clone())
+                            } else {
+                                opt.gen_contents().expect(
                                         "Couldn't get test contents. Make sure the specified language actually exists.",
                                     )
-                                };
+                            };
                             if new_contents.is_empty() {
                                 continue;
                             }
@@ -382,6 +396,7 @@ fn main() -> io::Result<()> {
                                 !opt.no_backspace,
                                 new_lines,
                                 opt.ascii,
+                                source.clone(),
                             ));
                         }
                         'p' => {
@@ -401,6 +416,7 @@ fn main() -> io::Result<()> {
                                 !opt.no_backspace,
                                 Vec::new(),
                                 opt.ascii,
+                                "practice".to_string(),
                             ));
                         }
                         'c' => {

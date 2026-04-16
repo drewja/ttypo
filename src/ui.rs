@@ -1,6 +1,6 @@
 use crate::config::Theme;
 
-use super::test::{results, Test, TestWord};
+use super::test::{Test, TestWord, results};
 
 use crossterm::event::KeyCode;
 use crossterm::event::KeyEvent;
@@ -87,11 +87,13 @@ impl ThemedWidget for &Test {
             Span::styled(format!("{}/{}", done, total), theme.status_progress),
         ]);
         let stats_width: usize = stats_line.spans.iter().map(|s| s.width()).sum();
-        let stats_offset = chunks[0]
-            .width
-            .saturating_sub(stats_width as u16)
-            / 2;
-        buf.set_line(chunks[0].x + stats_offset, chunks[0].y, &stats_line, chunks[0].width);
+        let stats_offset = chunks[0].width.saturating_sub(stats_width as u16) / 2;
+        buf.set_line(
+            chunks[0].x + stats_offset,
+            chunks[0].y,
+            &stats_line,
+            chunks[0].width,
+        );
 
         // Progress bar - full width of the prompt area
         let progress_frac = if total > 0 {
@@ -103,14 +105,8 @@ impl ThemedWidget for &Test {
         let filled = (progress_frac * bar_width as f64).round() as usize;
         let empty = bar_width.saturating_sub(filled);
         let bar_line = Line::from(vec![
-            Span::styled(
-                "\u{2588}".repeat(filled),
-                theme.status_progress_filled,
-            ),
-            Span::styled(
-                "\u{2591}".repeat(empty),
-                theme.status_progress_empty,
-            ),
+            Span::styled("\u{2588}".repeat(filled), theme.status_progress_filled),
+            Span::styled("\u{2591}".repeat(empty), theme.status_progress_empty),
         ]);
         buf.set_line(chunks[2].x, chunks[2].y, &bar_line, chunks[2].width);
 
@@ -176,6 +172,7 @@ impl ThemedWidget for &Test {
             .wrap(Wrap { trim: false })
             .block(
                 Block::default()
+                    .title(Span::styled(self.source.clone(), theme.title))
                     .borders(Borders::ALL)
                     .border_type(theme.border_type)
                     .border_style(theme.prompt_border)
@@ -397,10 +394,7 @@ impl ThemedWidget for &results::Results {
 
         let msg_len = msg.len();
         let exit = Line::from(Span::styled(msg, theme.results_restart_prompt));
-        let x_offset = chunks[1]
-            .width
-            .saturating_sub(msg_len as u16)
-            / 2;
+        let x_offset = chunks[1].width.saturating_sub(msg_len as u16) / 2;
         buf.set_line(chunks[1].x + x_offset, chunks[1].y, &exit, chunks[1].width);
 
         // Sections
@@ -523,11 +517,7 @@ impl ThemedWidget for &results::Results {
         } else {
             1
         };
-        let wpm_sma: Vec<(f64, f64)> = wpm_sma_full
-            .iter()
-            .step_by(step)
-            .copied()
-            .collect();
+        let wpm_sma: Vec<(f64, f64)> = wpm_sma_full.iter().step_by(step).copied().collect();
 
         // Plot a point on the SMA curve for each missed word
         let missed = &self.timing.missed_word_event_indices;
@@ -551,12 +541,14 @@ impl ThemedWidget for &results::Results {
                 .map(|(_, x)| x)
                 .fold(f64::NEG_INFINITY, |a, &b| a.max(b));
 
-            let mut wpm_datasets = vec![Dataset::default()
-                .name("WPM")
-                .marker(Marker::Braille)
-                .graph_type(GraphType::Line)
-                .style(theme.results_chart)
-                .data(&wpm_sma)];
+            let mut wpm_datasets = vec![
+                Dataset::default()
+                    .name("WPM")
+                    .marker(Marker::Braille)
+                    .graph_type(GraphType::Line)
+                    .style(theme.results_chart)
+                    .data(&wpm_sma),
+            ];
 
             if !mistake_points.is_empty() {
                 wpm_datasets.push(
