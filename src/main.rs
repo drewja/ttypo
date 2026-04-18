@@ -294,11 +294,33 @@ fn main() -> io::Result<()> {
             .unwrap_or_else(|| config.default_language.clone()),
     };
 
-    let is_file_mode = opt.contents.is_some();
-    let saved_contents = if is_file_mode {
-        Some((contents.clone(), lines.clone()))
-    } else {
-        None
+    let saved_contents: Option<(Vec<String>, Vec<DisplayLine>)> = opt
+        .contents
+        .is_some()
+        .then(|| (contents.clone(), lines.clone()));
+    let is_file_mode = saved_contents.is_some();
+
+    let make_test = |contents: Vec<String>, lines: Vec<DisplayLine>, source: String| {
+        Test::new(
+            contents,
+            !opt.no_backtrack,
+            opt.sudden_death,
+            !opt.no_backspace,
+            lines,
+            opt.ascii,
+            source,
+        )
+    };
+
+    let restart_contents = || -> (Vec<String>, Vec<DisplayLine>) {
+        saved_contents
+            .as_ref()
+            .map(|(c, l)| (c.clone(), l.clone()))
+            .unwrap_or_else(|| {
+                opt.gen_contents().expect(
+                    "Couldn't get test contents. Make sure the specified language actually exists.",
+                )
+            })
     };
 
     terminal::enable_raw_mode()?;
@@ -311,15 +333,7 @@ fn main() -> io::Result<()> {
     terminal.clear()?;
 
     let mut paused_test: Option<Test> = None;
-    let mut state = State::Test(Test::new(
-        contents,
-        !opt.no_backtrack,
-        opt.sudden_death,
-        !opt.no_backspace,
-        lines,
-        opt.ascii,
-        source.clone(),
-    ));
+    let mut state = State::Test(make_test(contents, lines, source.clone()));
 
     state.render_into(&mut terminal, &config)?;
     loop {
@@ -344,15 +358,17 @@ fn main() -> io::Result<()> {
                 kind: KeyEventKind::Press,
                 modifiers: KeyModifiers::NONE,
                 ..
-            }) => match state {
-                State::Test(ref test) => {
-                    let mut results = Results::from(test);
-                    results.is_repeat = is_file_mode;
-                    paused_test = Some(test.clone());
-                    state = State::Results(results);
-                }
-                State::Results(_) => break,
-            },
+            }) => {
+                state = match state {
+                    State::Test(test) => {
+                        let mut results = Results::from(&test);
+                        results.is_repeat = is_file_mode;
+                        paused_test = Some(test);
+                        State::Results(results)
+                    }
+                    State::Results(_) => break,
+                };
+            }
             _ => {}
         }
 
@@ -377,45 +393,25 @@ fn main() -> io::Result<()> {
                 {
                     match c.to_ascii_lowercase() {
                         'r' => {
-                            let (new_contents, new_lines) = if let Some((ref c, ref l)) =
-                                saved_contents
-                            {
-                                (c.clone(), l.clone())
-                            } else {
-                                opt.gen_contents().expect(
-                                        "Couldn't get test contents. Make sure the specified language actually exists.",
-                                    )
-                            };
+                            let (new_contents, new_lines) = restart_contents();
                             if new_contents.is_empty() {
                                 continue;
                             }
-                            state = State::Test(Test::new(
-                                new_contents,
-                                !opt.no_backtrack,
-                                opt.sudden_death,
-                                !opt.no_backspace,
-                                new_lines,
-                                opt.ascii,
-                                source.clone(),
-                            ));
+                            state = State::Test(make_test(new_contents, new_lines, source.clone()));
                         }
                         'p' => {
                             if result.missed_words.is_empty() {
                                 continue;
                             }
-                            // repeat each missed word 5 times
-                            let mut practice_words: Vec<String> = (result.missed_words)
+                            let mut practice_words: Vec<String> = result
+                                .missed_words
                                 .iter()
-                                .flat_map(|(w, _)| vec![w.clone(); 5])
+                                .flat_map(|(w, _)| std::iter::repeat_n(w.clone(), 5))
                                 .collect();
                             practice_words.shuffle(&mut rand::rng());
-                            state = State::Test(Test::new(
+                            state = State::Test(make_test(
                                 practice_words,
-                                !opt.no_backtrack,
-                                opt.sudden_death,
-                                !opt.no_backspace,
                                 Vec::new(),
-                                opt.ascii,
                                 "practice".to_string(),
                             ));
                         }

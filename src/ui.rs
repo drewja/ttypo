@@ -3,7 +3,6 @@ use crate::config::Theme;
 use super::test::{Test, TestWord, results};
 
 use crossterm::event::KeyCode;
-use crossterm::event::KeyEvent;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -219,113 +218,73 @@ enum Status {
 }
 
 fn split_current_word(word: &TestWord, ascii: bool) -> Vec<(String, Status)> {
-    use super::test::is_typeable;
-
-    let mut parts = Vec::new();
-    let mut cur_string = String::new();
-    let mut cur_status = Status::Untyped;
-
-    let mut progress = word.progress.chars();
-    for tc in word.text.chars() {
-        // In ascii mode, non-typeable chars are displayed but skipped over
-        if ascii && !is_typeable(tc) {
-            let status = Status::Skipped;
-            if status == cur_status {
-                cur_string.push(tc);
-            } else {
-                if !cur_string.is_empty() {
-                    parts.push((cur_string, cur_status));
-                    cur_string = String::new();
-                }
-                cur_string.push(tc);
-                cur_status = status;
-            }
-            continue;
-        }
-
-        let p = progress.next();
-        let status = match p {
-            None => Status::CurrentUntyped,
-            Some(c) => match c {
-                c if c == tc => Status::CurrentCorrect,
-                _ => Status::CurrentIncorrect,
-            },
-        };
-
-        if status == cur_status {
-            cur_string.push(tc);
-        } else {
-            if !cur_string.is_empty() {
-                parts.push((cur_string, cur_status));
-                cur_string = String::new();
-            }
-            cur_string.push(tc);
-            cur_status = status;
-
-            // first currentuntyped is cursor
-            if status == Status::CurrentUntyped {
-                parts.push((cur_string, Status::Cursor));
-                cur_string = String::new();
-            }
-        }
-    }
-    if !cur_string.is_empty() {
-        parts.push((cur_string, cur_status));
-    }
-    let overtyped = progress.collect::<String>();
-    if !overtyped.is_empty() {
-        parts.push((overtyped, Status::Overtyped));
-    }
-    parts
+    split_word(
+        word,
+        ascii,
+        Status::CurrentUntyped,
+        Status::CurrentCorrect,
+        Status::CurrentIncorrect,
+        true,
+    )
 }
 
 fn split_typed_word(word: &TestWord, ascii: bool) -> Vec<(String, Status)> {
+    split_word(
+        word,
+        ascii,
+        Status::Untyped,
+        Status::Correct,
+        Status::Incorrect,
+        false,
+    )
+}
+
+fn split_word(
+    word: &TestWord,
+    ascii: bool,
+    untyped: Status,
+    correct: Status,
+    incorrect: Status,
+    emit_cursor: bool,
+) -> Vec<(String, Status)> {
     use super::test::is_typeable;
 
-    let mut parts = Vec::new();
+    let mut parts: Vec<(String, Status)> = Vec::new();
     let mut cur_string = String::new();
     let mut cur_status = Status::Untyped;
 
+    let flush = |parts: &mut Vec<(String, Status)>, cur_string: &mut String, cur_status| {
+        if !cur_string.is_empty() {
+            parts.push((std::mem::take(cur_string), cur_status));
+        }
+    };
+
     let mut progress = word.progress.chars();
     for tc in word.text.chars() {
-        if ascii && !is_typeable(tc) {
-            let status = Status::Skipped;
-            if status == cur_status {
-                cur_string.push(tc);
-            } else {
-                if !cur_string.is_empty() {
-                    parts.push((cur_string, cur_status));
-                    cur_string = String::new();
-                }
-                cur_string.push(tc);
-                cur_status = status;
+        let status = if ascii && !is_typeable(tc) {
+            Status::Skipped
+        } else {
+            match progress.next() {
+                None => untyped,
+                Some(c) if c == tc => correct,
+                Some(_) => incorrect,
             }
-            continue;
-        }
-
-        let p = progress.next();
-        let status = match p {
-            None => Status::Untyped,
-            Some(c) => match c {
-                c if c == tc => Status::Correct,
-                _ => Status::Incorrect,
-            },
         };
 
         if status == cur_status {
             cur_string.push(tc);
-        } else {
-            if !cur_string.is_empty() {
-                parts.push((cur_string, cur_status));
-                cur_string = String::new();
-            }
-            cur_string.push(tc);
-            cur_status = status;
+            continue;
+        }
+
+        flush(&mut parts, &mut cur_string, cur_status);
+        cur_string.push(tc);
+        cur_status = status;
+
+        if emit_cursor && status == untyped {
+            parts.push((std::mem::take(&mut cur_string), Status::Cursor));
         }
     }
-    if !cur_string.is_empty() {
-        parts.push((cur_string, cur_status));
-    }
+    flush(&mut parts, &mut cur_string, cur_status);
 
     let overtyped = progress.collect::<String>();
     if !overtyped.is_empty() {
@@ -424,35 +383,31 @@ impl ThemedWidget for &results::Results {
         );
         overview.render(info_chunks[0], buf);
 
-        let mut worst_keys: Vec<(&KeyEvent, &Fraction)> = self
+        let mut worst_keys: Vec<(char, &Fraction)> = self
             .accuracy
             .per_key
             .iter()
-            .filter(|(key, _)| {
-                matches!(key.code, KeyCode::Char(c) if c != ' ' && self.test_chars.contains(&c))
+            .filter_map(|(key, acc)| match key.code {
+                KeyCode::Char(c)
+                    if c != ' '
+                        && self.test_chars.contains(&c)
+                        && acc.numerator < acc.denominator =>
+                {
+                    Some((c, acc))
+                }
+                _ => None,
             })
             .collect();
-        worst_keys.sort_unstable_by_key(|x| x.1);
+        worst_keys.sort_unstable_by_key(|(_, acc)| *acc);
 
         let mut worst_text = Text::styled("", theme.results_worst_keys);
-        worst_text.extend(
-            worst_keys
-                .iter()
-                .filter_map(|(key, acc)| {
-                    if let KeyCode::Char(character) = key.code {
-                        let key_accuracy = f64::from(**acc) * 100.0;
-                        if key_accuracy != 100.0 {
-                            Some(format!("- {} at {:.1}% accuracy", character, key_accuracy))
-                        } else {
-                            None
-                        }
-                    } else {
-                        None
-                    }
-                })
-                .take(5)
-                .map(Line::from),
-        );
+        worst_text.extend(worst_keys.iter().take(5).map(|(c, acc)| {
+            Line::from(format!(
+                "- {} at {:.1}% accuracy",
+                c,
+                f64::from(**acc) * 100.0
+            ))
+        }));
         let worst = Paragraph::new(worst_text).block(
             Block::default()
                 .title(Span::styled("Worst Keys", theme.title))
