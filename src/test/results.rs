@@ -1,7 +1,7 @@
-use super::{Test, is_missed_word_event};
+use super::{Test, is_missed_word_event, is_typeable};
 
 use crossterm::event::KeyEvent;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::{cmp, fmt};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -62,6 +62,7 @@ pub struct Results {
     pub missed_words: Vec<(String, usize)>,
     pub is_repeat: bool,
     pub completed: bool,
+    pub test_chars: HashSet<char>,
 }
 
 impl From<&Test> for Results {
@@ -92,12 +93,20 @@ impl From<&Test> for Results {
         let mut timing = calc_timing(&events);
         timing.missed_word_event_indices = missed_indices;
 
+        let test_chars = test
+            .words
+            .iter()
+            .flat_map(|w| w.text.chars())
+            .filter(|c| !test.ascii || is_typeable(*c))
+            .collect();
+
         Self {
             timing,
             accuracy: calc_accuracy(&events),
             missed_words: calc_missed_words(test),
             is_repeat: false,
             completed: test.complete,
+            test_chars,
         }
     }
 }

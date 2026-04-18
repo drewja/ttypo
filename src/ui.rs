@@ -428,7 +428,9 @@ impl ThemedWidget for &results::Results {
             .accuracy
             .per_key
             .iter()
-            .filter(|(key, _)| matches!(key.code, KeyCode::Char(c) if c != ' '))
+            .filter(|(key, _)| {
+                matches!(key.code, KeyCode::Char(c) if c != ' ' && self.test_chars.contains(&c))
+            })
             .collect();
         worst_keys.sort_unstable_by_key(|x| x.1);
 
