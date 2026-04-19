@@ -419,9 +419,7 @@ impl ThemedWidget for &results::Results {
         worst.render(info_chunks[1], buf);
 
         let mut missed_text = Text::styled("", theme.results_missed_words);
-        if self.missed_words.is_empty() {
-            missed_text.extend([Line::from("None!")]);
-        } else {
+        if !self.missed_words.is_empty() {
             missed_text.extend(
                 self.missed_words
                     .iter()
