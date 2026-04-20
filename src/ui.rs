@@ -345,6 +345,7 @@ impl ThemedWidget for &results::Results {
             parts.push("'r' repeat");
         } else {
             parts.push("'r' new test");
+            parts.push("'m' main menu");
         }
         if !self.missed_words.is_empty() {
             parts.push("'p' practice missed");
