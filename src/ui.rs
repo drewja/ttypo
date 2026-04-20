@@ -76,7 +76,7 @@ impl ThemedWidget for &Test {
         let mins = (elapsed as u64) / 60;
         let secs = (elapsed as u64) % 60;
         let wpm = self.live_wpm();
-        let sep = Span::styled(" \u{2502} ", theme.status_timer);
+        let sep = Span::styled(" │ ", theme.status_timer);
 
         let stats_line = Line::from(vec![
             Span::styled(format!("{:.0} wpm", wpm), theme.status_wpm),
@@ -104,8 +104,8 @@ impl ThemedWidget for &Test {
         let filled = (progress_frac * bar_width as f64).round() as usize;
         let empty = bar_width.saturating_sub(filled);
         let bar_line = Line::from(vec![
-            Span::styled("\u{2588}".repeat(filled), theme.status_progress_filled),
-            Span::styled("\u{2591}".repeat(empty), theme.status_progress_empty),
+            Span::styled("█".repeat(filled), theme.status_progress_filled),
+            Span::styled("░".repeat(empty), theme.status_progress_empty),
         ]);
         buf.set_line(chunks[2].x, chunks[2].y, &bar_line, chunks[2].width);
 
