@@ -1,5 +1,6 @@
 mod config;
 mod test;
+mod title;
 mod ui;
 
 use config::Config;
@@ -217,6 +218,46 @@ impl Opt {
     fn language_dir(&self) -> PathBuf {
         self.config_dir().join("language")
     }
+
+    /// Installed languages sorted and deduplicated.
+    fn languages_sorted(&self) -> Vec<String> {
+        let mut langs: Vec<String> = self
+            .languages()
+            .ok()
+            .into_iter()
+            .flatten()
+            .filter_map(|os| os.into_string().ok())
+            .collect();
+        langs.sort();
+        langs.dedup();
+        langs
+    }
+
+    /// Validate that the language used in language mode resolves to a file.
+    /// `--language-file` bypasses language-name lookup, so it's always ok.
+    fn validate_language(&self, config: &Config) -> Result<(), String> {
+        if self.language_file.is_some() {
+            return Ok(());
+        }
+        let lang = self
+            .language
+            .clone()
+            .unwrap_or_else(|| config.default_language.clone());
+        let found = self.language_dir().join(&lang).is_file()
+            || Resources::get(&format!("language/{}", &lang)).is_some();
+        if found { Ok(()) } else { Err(lang) }
+    }
+}
+
+fn teardown() -> io::Result<()> {
+    terminal::disable_raw_mode()?;
+    execute!(
+        io::stdout(),
+        cursor::RestorePosition,
+        cursor::Show,
+        terminal::LeaveAlternateScreen,
+    )?;
+    Ok(())
 }
 
 enum State {
@@ -247,7 +288,7 @@ impl State {
 }
 
 fn main() -> io::Result<()> {
-    let opt = Opt::parse();
+    let mut opt = Opt::parse();
     if opt.debug {
         dbg!(&opt);
     }
@@ -270,57 +311,33 @@ fn main() -> io::Result<()> {
         return Ok(());
     }
 
-    let backend = CrosstermBackend::new(io::stdout());
-    let mut terminal = Terminal::new(backend)?;
-    let (contents, lines) = opt
-        .gen_contents()
-        .expect("Couldn't get test contents. Make sure the specified language actually exists.");
-
-    if contents.is_empty() {
-        eprintln!("Error: the provided file or language contains no words to type.");
-        eprintln!("If you specified a file, make sure it isn't empty.");
+    // Validate language up front (language mode only). Fail early before any
+    // terminal takeover so error + help render cleanly.
+    if opt.contents.is_none()
+        && let Err(lang) = opt.validate_language(&config)
+    {
+        eprintln!("error: language \"{}\" not found.\n", lang);
+        let _ = Opt::command().print_help();
         std::process::exit(1);
     }
 
-    let source = match &opt.contents {
-        Some(path) if path.as_os_str() == "-" => "stdin".to_string(),
-        Some(path) => path
-            .file_name()
-            .map(|n| n.to_string_lossy().into_owned())
-            .unwrap_or_else(|| path.display().to_string()),
-        None => opt
-            .language
-            .clone()
-            .unwrap_or_else(|| config.default_language.clone()),
-    };
+    let backend = CrosstermBackend::new(io::stdout());
+    let mut terminal = Terminal::new(backend)?;
 
-    let saved_contents: Option<(Vec<String>, Vec<DisplayLine>)> = opt
-        .contents
-        .is_some()
-        .then(|| (contents.clone(), lines.clone()));
-    let is_file_mode = saved_contents.is_some();
-
-    let make_test = |contents: Vec<String>, lines: Vec<DisplayLine>, source: String| {
-        Test::new(
-            contents,
-            !opt.no_backtrack,
-            opt.sudden_death,
-            !opt.no_backspace,
-            lines,
-            opt.ascii,
-            source,
-        )
-    };
-
-    let restart_contents = || -> (Vec<String>, Vec<DisplayLine>) {
-        saved_contents
-            .as_ref()
-            .map(|(c, l)| (c.clone(), l.clone()))
-            .unwrap_or_else(|| {
-                opt.gen_contents().expect(
-                    "Couldn't get test contents. Make sure the specified language actually exists.",
-                )
-            })
+    // File/stdin mode: read contents BEFORE entering the alt screen so stdin
+    // still points at the real TTY/pipe.
+    let mut file_contents: Option<(Vec<String>, Vec<DisplayLine>)> = if opt.contents.is_some() {
+        let r = opt.gen_contents().expect(
+            "Couldn't get test contents. Make sure the specified language actually exists.",
+        );
+        if r.0.is_empty() {
+            eprintln!("Error: the provided file or language contains no words to type.");
+            eprintln!("If you specified a file, make sure it isn't empty.");
+            std::process::exit(1);
+        }
+        Some(r)
+    } else {
+        None
     };
 
     terminal::enable_raw_mode()?;
@@ -332,111 +349,192 @@ fn main() -> io::Result<()> {
     )?;
     terminal.clear()?;
 
-    let mut paused_test: Option<Test> = None;
-    let mut state = State::Test(make_test(contents, lines, source.clone()));
-
-    state.render_into(&mut terminal, &config)?;
-    loop {
-        // Poll with timeout so the status bar (timer/WPM) updates live
-        if !event::poll(Duration::from_millis(200))? {
-            // Redraw for timer updates
-            state.render_into(&mut terminal, &config)?;
-            continue;
-        }
-        let event = event::read()?;
-
-        // handle exit controls
-        match event {
-            Event::Key(KeyEvent {
-                code: KeyCode::Char('c'),
-                kind: KeyEventKind::Press,
-                modifiers: KeyModifiers::CONTROL,
-                ..
-            }) => break,
-            Event::Key(KeyEvent {
-                code: KeyCode::Esc,
-                kind: KeyEventKind::Press,
-                modifiers: KeyModifiers::NONE,
-                ..
-            }) => {
-                state = match state {
-                    State::Test(test) => {
-                        let mut results = Results::from(&test);
-                        results.is_repeat = is_file_mode;
-                        paused_test = Some(test);
-                        State::Results(results)
-                    }
-                    State::Results(_) => break,
-                };
-            }
-            _ => {}
-        }
-
-        match state {
-            State::Test(ref mut test) => {
-                if let Event::Key(key) = event {
-                    test.handle_key(key);
-                    if test.complete {
-                        let mut results = Results::from(&*test);
-                        results.is_repeat = is_file_mode;
-                        paused_test = None;
-                        state = State::Results(results);
-                    }
-                }
-            }
-            State::Results(ref result) => {
-                if let Event::Key(KeyEvent {
-                    code: KeyCode::Char(c),
-                    kind: KeyEventKind::Press,
-                    ..
-                }) = event
-                {
-                    match c.to_ascii_lowercase() {
-                        'r' => {
-                            let (new_contents, new_lines) = restart_contents();
-                            if new_contents.is_empty() {
-                                continue;
-                            }
-                            state = State::Test(make_test(new_contents, new_lines, source.clone()));
-                        }
-                        'p' => {
-                            if result.missed_words.is_empty() {
-                                continue;
-                            }
-                            let mut practice_words: Vec<String> = result
-                                .missed_words
-                                .iter()
-                                .flat_map(|(w, _)| std::iter::repeat_n(w.clone(), 5))
-                                .collect();
-                            practice_words.shuffle(&mut rand::rng());
-                            state = State::Test(make_test(
-                                practice_words,
-                                Vec::new(),
-                                "practice".to_string(),
-                            ));
-                        }
-                        'c' => {
-                            if let Some(test) = paused_test.take() {
-                                state = State::Test(test);
-                            }
-                        }
-                        'q' => break,
-                        _ => {}
-                    }
+    // Outer "session" loop: re-entered when the user hits 'm' on the results
+    // screen to return to the main menu. File mode never re-enters since 'm'
+    // is disabled there.
+    'outer: loop {
+        if opt.contents.is_none() {
+            let t = title::Title::new(
+                opt.language
+                    .clone()
+                    .unwrap_or_else(|| config.default_language.clone()),
+                opt.words,
+                opt.sudden_death,
+                opt.no_backtrack,
+                opt.no_backspace,
+                opt.ascii,
+                opt.languages_sorted(),
+            );
+            match title::run(&mut terminal, &config, t)? {
+                title::Outcome::Quit => break 'outer,
+                title::Outcome::Start(t) => {
+                    opt.language = Some(t.language);
+                    opt.words = t.words;
+                    opt.sudden_death = t.sudden_death;
+                    opt.no_backtrack = t.no_backtrack;
+                    opt.no_backspace = t.no_backspace;
+                    opt.ascii = t.ascii;
                 }
             }
         }
+
+        let (contents, lines) = match file_contents.take() {
+            Some(fc) => fc,
+            None => opt.gen_contents().unwrap_or_else(|| {
+                let _ = teardown();
+                eprintln!("Couldn't get test contents.");
+                std::process::exit(1);
+            }),
+        };
+        if contents.is_empty() {
+            let _ = teardown();
+            eprintln!("Error: the provided file or language contains no words to type.");
+            std::process::exit(1);
+        }
+
+        let source = match &opt.contents {
+            Some(path) if path.as_os_str() == "-" => "stdin".to_string(),
+            Some(path) => path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_else(|| path.display().to_string()),
+            None => opt
+                .language
+                .clone()
+                .unwrap_or_else(|| config.default_language.clone()),
+        };
+
+        let saved_contents: Option<(Vec<String>, Vec<DisplayLine>)> = opt
+            .contents
+            .is_some()
+            .then(|| (contents.clone(), lines.clone()));
+        let is_file_mode = saved_contents.is_some();
+
+        let make_test = |contents: Vec<String>, lines: Vec<DisplayLine>, source: String| {
+            Test::new(
+                contents,
+                !opt.no_backtrack,
+                opt.sudden_death,
+                !opt.no_backspace,
+                lines,
+                opt.ascii,
+                source,
+            )
+        };
+
+        let restart_contents = || -> (Vec<String>, Vec<DisplayLine>) {
+            saved_contents
+                .as_ref()
+                .map(|(c, l)| (c.clone(), l.clone()))
+                .unwrap_or_else(|| {
+                    opt.gen_contents().expect(
+                        "Couldn't get test contents. Make sure the specified language actually exists.",
+                    )
+                })
+        };
+
+        let mut paused_test: Option<Test> = None;
+        let mut state = State::Test(make_test(contents, lines, source.clone()));
 
         state.render_into(&mut terminal, &config)?;
+        'session: loop {
+            // Poll with timeout so the status bar (timer/WPM) updates live
+            if !event::poll(Duration::from_millis(200))? {
+                // Redraw for timer updates
+                state.render_into(&mut terminal, &config)?;
+                continue;
+            }
+            let event = event::read()?;
+
+            // handle exit controls
+            match event {
+                Event::Key(KeyEvent {
+                    code: KeyCode::Char('c'),
+                    kind: KeyEventKind::Press,
+                    modifiers: KeyModifiers::CONTROL,
+                    ..
+                }) => break 'outer,
+                Event::Key(KeyEvent {
+                    code: KeyCode::Esc,
+                    kind: KeyEventKind::Press,
+                    modifiers: KeyModifiers::NONE,
+                    ..
+                }) => {
+                    state = match state {
+                        State::Test(test) => {
+                            let mut results = Results::from(&test);
+                            results.is_repeat = is_file_mode;
+                            paused_test = Some(test);
+                            State::Results(results)
+                        }
+                        State::Results(_) => break 'outer,
+                    };
+                }
+                _ => {}
+            }
+
+            match state {
+                State::Test(ref mut test) => {
+                    if let Event::Key(key) = event {
+                        test.handle_key(key);
+                        if test.complete {
+                            let mut results = Results::from(&*test);
+                            results.is_repeat = is_file_mode;
+                            paused_test = None;
+                            state = State::Results(results);
+                        }
+                    }
+                }
+                State::Results(ref result) => {
+                    if let Event::Key(KeyEvent {
+                        code: KeyCode::Char(c),
+                        kind: KeyEventKind::Press,
+                        ..
+                    }) = event
+                    {
+                        match c.to_ascii_lowercase() {
+                            'r' => {
+                                let (new_contents, new_lines) = restart_contents();
+                                if new_contents.is_empty() {
+                                    continue;
+                                }
+                                state =
+                                    State::Test(make_test(new_contents, new_lines, source.clone()));
+                            }
+                            'p' => {
+                                if result.missed_words.is_empty() {
+                                    continue;
+                                }
+                                let mut practice_words: Vec<String> = result
+                                    .missed_words
+                                    .iter()
+                                    .flat_map(|(w, _)| std::iter::repeat_n(w.clone(), 5))
+                                    .collect();
+                                practice_words.shuffle(&mut rand::rng());
+                                state = State::Test(make_test(
+                                    practice_words,
+                                    Vec::new(),
+                                    "practice".to_string(),
+                                ));
+                            }
+                            'c' => {
+                                if let Some(test) = paused_test.take() {
+                                    state = State::Test(test);
+                                }
+                            }
+                            'q' => break 'outer,
+                            'm' if !is_file_mode => break 'session,
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            state.render_into(&mut terminal, &config)?;
+        }
     }
 
-    terminal::disable_raw_mode()?;
-    execute!(
-        io::stdout(),
-        cursor::RestorePosition,
-        cursor::Show,
-        terminal::LeaveAlternateScreen,
-    )?;
+    teardown()?;
 
     Ok(())
 }
