@@ -15,6 +15,13 @@ use std::{io, num::NonZeroUsize};
 
 const WORD_PRESETS: [usize; 6] = [10, 25, 50, 100, 200, 500];
 
+const BANNER: &str = r" _   _
+| |_| |_ _   _ _ __   ___
+| __| __| | | | '_ \ / _ \
+| |_| |_| |_| | |_) | (_) |
+ \__|\__|\__, | .__/ \___/
+         |___/|_|          ";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Cursor {
     Language,
@@ -304,7 +311,7 @@ impl ThemedWidget for &Title {
         buf.set_style(area, theme.default);
 
         let card_w = 60u16.min(area.width);
-        let card_h = 19u16.min(area.height);
+        let card_h = 22u16.min(area.height);
         let card = Rect {
             x: area.x + area.width.saturating_sub(card_w) / 2,
             y: area.y + area.height.saturating_sub(card_h) / 2,
@@ -387,53 +394,61 @@ impl Title {
             theme.prompt_untyped
         };
 
-        let lines: Vec<Line> = vec![
-            Line::from(Span::styled("\u{2554}\u{2566}\u{2557} \u{2554}\u{2566}\u{2557} \u{2566} \u{2566} \u{2554}\u{2550}\u{2557} \u{2554}\u{2550}\u{2557}", theme.title)).alignment(Alignment::Center),
-            Line::from(Span::styled(" \u{2551}   \u{2551}  \u{255a}\u{2566}\u{255d} \u{2560}\u{2550}\u{255d} \u{2551} \u{2551}", theme.title)).alignment(Alignment::Center),
-            Line::from(Span::styled(" \u{2569}   \u{2569}   \u{2569}  \u{2569}   \u{255a}\u{2550}\u{255d}", theme.title)).alignment(Alignment::Center),
-            Line::from(""),
-            setting_row(
-                Cursor::Language,
-                "Language",
-                Span::styled(self.language.clone(), value_style(Cursor::Language)),
-            ),
-            setting_row(
-                Cursor::Words,
-                "Words",
-                Span::styled(format!("{}", self.words), value_style(Cursor::Words)),
-            ),
-            Line::from(""),
-            setting_row(
-                Cursor::SuddenDeath,
-                "Sudden death",
-                bool_value(Cursor::SuddenDeath, self.sudden_death),
-            ),
-            setting_row(
-                Cursor::NoBacktrack,
-                "No backtrack",
-                bool_value(Cursor::NoBacktrack, self.no_backtrack),
-            ),
-            setting_row(
-                Cursor::NoBackspace,
-                "No backspace",
-                bool_value(Cursor::NoBackspace, self.no_backspace),
-            ),
-            setting_row(
-                Cursor::Ascii,
-                "ASCII only",
-                bool_value(Cursor::Ascii, self.ascii),
-            ),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("[ Start ]", start_style),
-                Span::raw("    "),
-                Span::styled("[ Quit ]", quit_style),
-            ])
-            .alignment(Alignment::Center),
-            Line::from(""),
-            Line::from(Span::styled(self.hint_text(), theme.results_restart_prompt))
+        let banner_w = BANNER.lines().map(str::len).max().unwrap_or(0);
+        let lines: Vec<Line> = BANNER
+            .lines()
+            .map(|l| {
+                Line::from(Span::styled(
+                    format!("{:<w$}", l, w = banner_w),
+                    theme.title,
+                ))
+                .alignment(Alignment::Center)
+            })
+            .chain([
+                Line::from(""),
+                setting_row(
+                    Cursor::Language,
+                    "Language",
+                    Span::styled(self.language.clone(), value_style(Cursor::Language)),
+                ),
+                setting_row(
+                    Cursor::Words,
+                    "Words",
+                    Span::styled(format!("{}", self.words), value_style(Cursor::Words)),
+                ),
+                Line::from(""),
+                setting_row(
+                    Cursor::SuddenDeath,
+                    "Sudden death",
+                    bool_value(Cursor::SuddenDeath, self.sudden_death),
+                ),
+                setting_row(
+                    Cursor::NoBacktrack,
+                    "No backtrack",
+                    bool_value(Cursor::NoBacktrack, self.no_backtrack),
+                ),
+                setting_row(
+                    Cursor::NoBackspace,
+                    "No backspace",
+                    bool_value(Cursor::NoBackspace, self.no_backspace),
+                ),
+                setting_row(
+                    Cursor::Ascii,
+                    "ASCII only",
+                    bool_value(Cursor::Ascii, self.ascii),
+                ),
+                Line::from(""),
+                Line::from(vec![
+                    Span::styled("[ Start ]", start_style),
+                    Span::raw("    "),
+                    Span::styled("[ Quit ]", quit_style),
+                ])
                 .alignment(Alignment::Center),
-        ];
+                Line::from(""),
+                Line::from(Span::styled(self.hint_text(), theme.results_restart_prompt))
+                    .alignment(Alignment::Center),
+            ])
+            .collect();
 
         Paragraph::new(lines).render(inner, buf);
     }
