@@ -6,8 +6,8 @@ use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     buffer::Buffer,
-    layout::{Constraint, Direction, Layout, Rect},
-    style::Style,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph, Widget},
 };
@@ -304,7 +304,7 @@ impl ThemedWidget for &Title {
         buf.set_style(area, theme.default);
 
         let card_w = 60u16.min(area.width);
-        let card_h = 18u16.min(area.height);
+        let card_h = 19u16.min(area.height);
         let card = Rect {
             x: area.x + area.width.saturating_sub(card_w) / 2,
             y: area.y + area.height.saturating_sub(card_h) / 2,
@@ -321,8 +321,19 @@ impl ThemedWidget for &Title {
 
 impl Title {
     fn render_menu(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
+        let block = Block::default()
+            .borders(Borders::ALL)
+            .border_type(theme.border_type)
+            .border_style(theme.prompt_border)
+            .padding(Padding::new(3, 3, 1, 1));
+        let inner = block.inner(area);
+        block.render(area, buf);
+
         let sel = |c: Cursor| c == self.cursor;
-        let prefix = |c: Cursor| if sel(c) { "\u{25b8} " } else { "  " };
+        let inner_w = inner.width as usize;
+        let label_w: usize = 16;
+        let pointer_w: usize = 2;
+
         let row_style = |c: Cursor| -> Style {
             if sel(c) {
                 theme.prompt_current_untyped
@@ -337,68 +348,110 @@ impl Title {
                 theme.prompt_untyped
             }
         };
-        let bool_row = |c: Cursor, label: &str, on: bool| -> Line<'static> {
-            let mark = if on { "[x]" } else { "[ ]" };
+
+        let setting_row = |c: Cursor, label: &str, value: Span<'static>| -> Line<'static> {
+            let pointer = if sel(c) { "\u{25b8} " } else { "  " };
+            let val_w = value.content.chars().count();
+            let pad = inner_w.saturating_sub(pointer_w + label_w + val_w);
             Line::from(vec![
-                Span::raw(prefix(c).to_string()),
-                Span::styled(format!("{} {}", mark, label), row_style(c)),
+                Span::styled(pointer.to_string(), row_style(c)),
+                Span::styled(format!("{:<w$}", label, w = label_w), row_style(c)),
+                Span::raw(" ".repeat(pad)),
+                value,
             ])
         };
 
+        let bool_value = |c: Cursor, on: bool| -> Span<'static> {
+            let text = if on { "on" } else { "off" };
+            let base = if on {
+                theme.prompt_correct
+            } else {
+                theme.prompt_untyped
+            };
+            let style = if sel(c) {
+                base.add_modifier(Modifier::BOLD)
+            } else {
+                base
+            };
+            Span::styled(text, style)
+        };
+
+        let start_style = if sel(Cursor::Start) {
+            theme.prompt_current_correct
+        } else {
+            theme.prompt_untyped
+        };
+        let quit_style = if sel(Cursor::Quit) {
+            theme.prompt_current_incorrect
+        } else {
+            theme.prompt_untyped
+        };
+
         let lines: Vec<Line> = vec![
-            Line::from(vec![
-                Span::raw(prefix(Cursor::Language).to_string()),
-                Span::styled(format!("{:<12}", "Language:"), row_style(Cursor::Language)),
+            Line::from(Span::styled("\u{2554}\u{2566}\u{2557} \u{2554}\u{2566}\u{2557} \u{2566} \u{2566} \u{2554}\u{2550}\u{2557} \u{2554}\u{2550}\u{2557}", theme.title)).alignment(Alignment::Center),
+            Line::from(Span::styled(" \u{2551}   \u{2551}  \u{255a}\u{2566}\u{255d} \u{2560}\u{2550}\u{255d} \u{2551} \u{2551}", theme.title)).alignment(Alignment::Center),
+            Line::from(Span::styled(" \u{2569}   \u{2569}   \u{2569}  \u{2569}   \u{255a}\u{2550}\u{255d}", theme.title)).alignment(Alignment::Center),
+            Line::from(""),
+            setting_row(
+                Cursor::Language,
+                "Language",
                 Span::styled(self.language.clone(), value_style(Cursor::Language)),
-            ]),
-            Line::from(vec![
-                Span::raw(prefix(Cursor::Words).to_string()),
-                Span::styled(format!("{:<12}", "Words:"), row_style(Cursor::Words)),
+            ),
+            setting_row(
+                Cursor::Words,
+                "Words",
                 Span::styled(format!("{}", self.words), value_style(Cursor::Words)),
-            ]),
+            ),
             Line::from(""),
-            bool_row(Cursor::SuddenDeath, "sudden death", self.sudden_death),
-            bool_row(Cursor::NoBacktrack, "no backtrack", self.no_backtrack),
-            bool_row(Cursor::NoBackspace, "no backspace", self.no_backspace),
-            bool_row(Cursor::Ascii, "ascii", self.ascii),
+            setting_row(
+                Cursor::SuddenDeath,
+                "Sudden death",
+                bool_value(Cursor::SuddenDeath, self.sudden_death),
+            ),
+            setting_row(
+                Cursor::NoBacktrack,
+                "No backtrack",
+                bool_value(Cursor::NoBacktrack, self.no_backtrack),
+            ),
+            setting_row(
+                Cursor::NoBackspace,
+                "No backspace",
+                bool_value(Cursor::NoBackspace, self.no_backspace),
+            ),
+            setting_row(
+                Cursor::Ascii,
+                "ASCII only",
+                bool_value(Cursor::Ascii, self.ascii),
+            ),
             Line::from(""),
             Line::from(vec![
-                Span::raw(prefix(Cursor::Start).to_string()),
-                Span::styled(
-                    "[ start ]",
-                    if sel(Cursor::Start) {
-                        theme.prompt_current_correct
-                    } else {
-                        theme.prompt_untyped
-                    },
-                ),
-            ]),
-            Line::from(vec![
-                Span::raw(prefix(Cursor::Quit).to_string()),
-                Span::styled(
-                    "[ quit ]",
-                    if sel(Cursor::Quit) {
-                        theme.prompt_current_incorrect
-                    } else {
-                        theme.prompt_untyped
-                    },
-                ),
-            ]),
+                Span::styled("[ Start ]", start_style),
+                Span::raw("    "),
+                Span::styled("[ Quit ]", quit_style),
+            ])
+            .alignment(Alignment::Center),
             Line::from(""),
-            Line::from(Span::styled(
-                "\u{2191}\u{2193} move  \u{2190}\u{2192} change  \u{21e7}+\u{2190}\u{2192} fine  space toggle  \u{23ce} select",
-                theme.results_restart_prompt,
-            )),
+            Line::from(Span::styled(self.hint_text(), theme.results_restart_prompt))
+                .alignment(Alignment::Center),
         ];
 
-        let block = Block::default()
-            .title(Span::styled(" ttypo ", theme.title))
-            .borders(Borders::ALL)
-            .border_type(theme.border_type)
-            .border_style(theme.prompt_border)
-            .padding(Padding::new(2, 2, 1, 1));
+        Paragraph::new(lines).render(inner, buf);
+    }
 
-        Paragraph::new(lines).block(block).render(area, buf);
+    fn hint_text(&self) -> &'static str {
+        match self.cursor {
+            Cursor::Language => {
+                "\u{2190}\u{2192} cycle   \u{23ce} browse all   \u{2191}\u{2193} navigate"
+            }
+            Cursor::Words => {
+                "\u{2190}\u{2192} preset   \u{21e7}+\u{2190}\u{2192} \u{00b1}1   \u{2191}\u{2193} navigate"
+            }
+            Cursor::SuddenDeath | Cursor::NoBacktrack | Cursor::NoBackspace | Cursor::Ascii => {
+                "space toggle   \u{2191}\u{2193} navigate"
+            }
+            Cursor::Start => "\u{23ce} begin test   \u{2191}\u{2193} navigate",
+            Cursor::Quit => "\u{23ce} exit   \u{2191}\u{2193} navigate",
+        }
     }
 
     fn render_picker(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
