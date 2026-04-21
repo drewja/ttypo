@@ -196,3 +196,172 @@ fn calc_missed_words(test: &Test) -> Vec<(String, usize)> {
     result.sort_by(|a, b| b.1.cmp(&a.1));
     result
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::test::{Test, TestEvent};
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyEventState, KeyModifiers};
+    use std::time::{Duration, Instant};
+
+    fn key(c: char) -> KeyEvent {
+        KeyEvent {
+            code: KeyCode::Char(c),
+            modifiers: KeyModifiers::NONE,
+            kind: KeyEventKind::Press,
+            state: KeyEventState::NONE,
+        }
+    }
+
+    fn event(time: Instant, c: char, correct: Option<bool>) -> TestEvent {
+        TestEvent {
+            time,
+            key: key(c),
+            correct,
+        }
+    }
+
+    fn make_test(words: &[&str], ascii: bool) -> Test {
+        Test::new(
+            words.iter().map(|s| s.to_string()).collect(),
+            true,
+            false,
+            true,
+            Vec::new(),
+            ascii,
+            String::new(),
+        )
+    }
+
+    #[test]
+    fn fraction_ord_compares_values_not_fields() {
+        // PartialEq is derived (field-wise), but Ord compares numeric value.
+        assert_eq!(
+            Fraction::new(1, 2).cmp(&Fraction::new(50, 100)),
+            cmp::Ordering::Equal
+        );
+        assert!(Fraction::new(1, 2) < Fraction::new(2, 3));
+        assert!(Fraction::new(3, 4) > Fraction::new(2, 3));
+    }
+
+    #[test]
+    fn calc_timing_per_event_durations() {
+        let base = Instant::now();
+        let events = vec![
+            event(base, 'a', Some(true)),
+            event(base + Duration::from_millis(100), 'b', Some(true)),
+            event(base + Duration::from_millis(300), 'c', Some(true)),
+        ];
+        let refs: Vec<&TestEvent> = events.iter().collect();
+        let timing = calc_timing(&refs);
+        assert_eq!(timing.per_event.len(), 2);
+        assert!((timing.per_event[0] - 0.1).abs() < 1e-6);
+        assert!((timing.per_event[1] - 0.2).abs() < 1e-6);
+    }
+
+    #[test]
+    fn calc_timing_overall_cps() {
+        let base = Instant::now();
+        // 3 events, 1s apart → 2 intervals totalling 2s → cps = 1.0
+        let events = vec![
+            event(base, 'a', Some(true)),
+            event(base + Duration::from_secs(1), 'b', Some(true)),
+            event(base + Duration::from_secs(2), 'c', Some(true)),
+        ];
+        let refs: Vec<&TestEvent> = events.iter().collect();
+        let timing = calc_timing(&refs);
+        assert!((timing.overall_cps - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn calc_accuracy_counts_correct_vs_incorrect() {
+        let base = Instant::now();
+        let events = vec![
+            event(base, 'a', Some(true)),
+            event(base, 'b', Some(false)),
+            event(base, 'c', Some(true)),
+        ];
+        let refs: Vec<&TestEvent> = events.iter().collect();
+        let acc = calc_accuracy(&refs);
+        assert_eq!(acc.overall, Fraction::new(2, 3));
+    }
+
+    #[test]
+    fn calc_accuracy_skips_none_correct_events() {
+        // Ctrl-w / Ctrl-h push events with correct=None; they must not affect the ratio.
+        let base = Instant::now();
+        let events = vec![
+            event(base, 'a', Some(true)),
+            event(base, 'w', None),
+            event(base, 'b', Some(false)),
+        ];
+        let refs: Vec<&TestEvent> = events.iter().collect();
+        let acc = calc_accuracy(&refs);
+        assert_eq!(acc.overall, Fraction::new(1, 2));
+    }
+
+    #[test]
+    fn calc_missed_words_empty_when_all_correct() {
+        let mut test = make_test(&["hello"], false);
+        let base = Instant::now();
+        test.words[0].events = vec![
+            event(base, 'h', Some(true)),
+            event(base, 'e', Some(true)),
+            event(base, 'l', Some(true)),
+            event(base, 'l', Some(true)),
+            event(base, 'o', Some(true)),
+        ];
+        assert!(calc_missed_words(&test).is_empty());
+    }
+
+    #[test]
+    fn calc_missed_words_dedups_counts_and_sorts_desc() {
+        let mut test = make_test(&["hello", "world", "world"], false);
+        let base = Instant::now();
+        test.words[0].events = vec![event(base, 'h', Some(false))];
+        test.words[1].events = vec![event(base, 'w', Some(false))];
+        test.words[2].events = vec![event(base, 'w', Some(false))];
+        let missed = calc_missed_words(&test);
+        assert_eq!(
+            missed,
+            vec![("world".to_string(), 2), ("hello".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn results_from_computes_missed_word_event_index() {
+        // Word 1 has a mistake; its last event at absolute index 5 maps to
+        // per_event index 4 (windows(2) drops one; last_event-1).
+        let mut test = make_test(&["aa", "bb"], false);
+        let base = Instant::now();
+        test.words[0].events = vec![
+            event(base, 'a', Some(true)),
+            event(base + Duration::from_millis(100), 'a', Some(true)),
+            event(base + Duration::from_millis(200), ' ', Some(true)),
+        ];
+        test.words[1].events = vec![
+            event(base + Duration::from_millis(300), 'b', Some(false)),
+            event(base + Duration::from_millis(400), 'b', Some(true)),
+            event(base + Duration::from_millis(500), ' ', Some(true)),
+        ];
+        let results = Results::from(&test);
+        assert_eq!(results.timing.missed_word_event_indices, vec![4]);
+    }
+
+    #[test]
+    fn results_test_chars_filters_unicode_in_ascii_mode() {
+        let test = make_test(&["café"], true);
+        let results = Results::from(&test);
+        assert!(results.test_chars.contains(&'c'));
+        assert!(results.test_chars.contains(&'a'));
+        assert!(results.test_chars.contains(&'f'));
+        assert!(!results.test_chars.contains(&'é'));
+    }
+
+    #[test]
+    fn results_test_chars_keeps_unicode_in_non_ascii_mode() {
+        let test = make_test(&["café"], false);
+        let results = Results::from(&test);
+        assert!(results.test_chars.contains(&'é'));
+    }
+}

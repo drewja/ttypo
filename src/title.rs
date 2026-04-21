@@ -15,12 +15,10 @@ use std::{io, num::NonZeroUsize};
 
 const WORD_PRESETS: [usize; 6] = [10, 25, 50, 100, 200, 500];
 
-const BANNER: &str = r" _   _
-| |_| |_ _   _ _ __   ___
-| __| __| | | | '_ \ / _ \
-| |_| |_| |_| | |_) | (_) |
- \__|\__|\__, | .__/ \___/
-         |___/|_|          ";
+const BANNER: &str = " ▄   ▄
+▀█▀ ▀█▀ █ █ █▀█ █▀█
+ █▄  █▄ █▄█ █▄█ █▄█
+        ▄▄█ █";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Cursor {
@@ -311,7 +309,7 @@ impl ThemedWidget for &Title {
         buf.set_style(area, theme.default);
 
         let card_w = 60u16.min(area.width);
-        let card_h = 22u16.min(area.height);
+        let card_h = 20u16.min(area.height);
         let card = Rect {
             x: area.x + area.width.saturating_sub(card_w) / 2,
             y: area.y + area.height.saturating_sub(card_h) / 2,
@@ -357,7 +355,7 @@ impl Title {
         };
 
         let setting_row = |c: Cursor, label: &str, value: Span<'static>| -> Line<'static> {
-            let pointer = if sel(c) { "\u{25b8} " } else { "  " };
+            let pointer = if sel(c) { "▸ " } else { "  " };
             let val_w = value.content.chars().count();
             let pad = inner_w.saturating_sub(pointer_w + label_w + val_w);
             Line::from(vec![
@@ -394,7 +392,11 @@ impl Title {
             theme.prompt_untyped
         };
 
-        let banner_w = BANNER.lines().map(str::len).max().unwrap_or(0);
+        let banner_w = BANNER
+            .lines()
+            .map(|l| l.chars().count())
+            .max()
+            .unwrap_or(0);
         let lines: Vec<Line> = BANNER
             .lines()
             .map(|l| {
@@ -456,16 +458,16 @@ impl Title {
     fn hint_text(&self) -> &'static str {
         match self.cursor {
             Cursor::Language => {
-                "\u{2190}\u{2192} cycle   \u{23ce} browse all   \u{2191}\u{2193} navigate"
+                "←→ cycle   ⏎ browse all   ↑↓ navigate"
             }
             Cursor::Words => {
-                "\u{2190}\u{2192} preset   \u{21e7}+\u{2190}\u{2192} \u{00b1}1   \u{2191}\u{2193} navigate"
+                "←→ preset   ⇧+←→ ±1   ↑↓ navigate"
             }
             Cursor::SuddenDeath | Cursor::NoBacktrack | Cursor::NoBackspace | Cursor::Ascii => {
-                "space toggle   \u{2191}\u{2193} navigate"
+                "space toggle   ↑↓ navigate"
             }
-            Cursor::Start => "\u{23ce} begin test   \u{2191}\u{2193} navigate",
-            Cursor::Quit => "\u{23ce} exit   \u{2191}\u{2193} navigate",
+            Cursor::Start => "⏎ begin test   ↑↓ navigate",
+            Cursor::Quit => "⏎ exit   ↑↓ navigate",
         }
     }
 
@@ -507,7 +509,7 @@ impl Title {
         for (i, name) in filtered.iter().skip(scroll).take(list_h).enumerate() {
             let idx = scroll + i;
             let (marker, style) = if idx == self.picker_cursor {
-                ("\u{25b8} ", theme.prompt_current_correct)
+                ("▸ ", theme.prompt_current_correct)
             } else {
                 ("  ", theme.prompt_untyped)
             };
@@ -519,7 +521,7 @@ impl Title {
         }
 
         let footer = Line::from(Span::styled(
-            "type to filter  \u{23ce} select  esc back",
+            "type to filter  ⏎ select  esc back",
             theme.results_restart_prompt,
         ));
         buf.set_line(chunks[3].x, chunks[3].y, &footer, chunks[3].width);
@@ -574,59 +576,25 @@ mod tests {
     }
 
     #[test]
-    fn word_preset_next_from_preset() {
-        let mut t = sample_title();
-        t.words = NonZeroUsize::new(50).unwrap();
-        t.next_word_preset();
-        assert_eq!(t.words.get(), 100);
+    fn word_preset_next_boundaries() {
+        // [start, expected-after-next]: at-preset, between-presets, wrap, above-max
+        for (start, expected) in [(50usize, 100), (73, 100), (500, 10), (1000, 10)] {
+            let mut t = sample_title();
+            t.words = NonZeroUsize::new(start).unwrap();
+            t.next_word_preset();
+            assert_eq!(t.words.get(), expected, "next from {}", start);
+        }
     }
 
     #[test]
-    fn word_preset_next_from_non_preset() {
-        let mut t = sample_title();
-        t.words = NonZeroUsize::new(73).unwrap();
-        t.next_word_preset();
-        assert_eq!(t.words.get(), 100);
-    }
-
-    #[test]
-    fn word_preset_next_wraps_at_max() {
-        let mut t = sample_title();
-        t.words = NonZeroUsize::new(500).unwrap();
-        t.next_word_preset();
-        assert_eq!(t.words.get(), 10);
-    }
-
-    #[test]
-    fn word_preset_next_wraps_above_max() {
-        let mut t = sample_title();
-        t.words = NonZeroUsize::new(1000).unwrap();
-        t.next_word_preset();
-        assert_eq!(t.words.get(), 10);
-    }
-
-    #[test]
-    fn word_preset_prev_from_preset() {
-        let mut t = sample_title();
-        t.words = NonZeroUsize::new(100).unwrap();
-        t.prev_word_preset();
-        assert_eq!(t.words.get(), 50);
-    }
-
-    #[test]
-    fn word_preset_prev_from_non_preset() {
-        let mut t = sample_title();
-        t.words = NonZeroUsize::new(73).unwrap();
-        t.prev_word_preset();
-        assert_eq!(t.words.get(), 50);
-    }
-
-    #[test]
-    fn word_preset_prev_wraps_at_min() {
-        let mut t = sample_title();
-        t.words = NonZeroUsize::new(10).unwrap();
-        t.prev_word_preset();
-        assert_eq!(t.words.get(), 500);
+    fn word_preset_prev_boundaries() {
+        // [start, expected-after-prev]: at-preset, between-presets, wrap-at-min
+        for (start, expected) in [(100usize, 50), (73, 50), (10, 500)] {
+            let mut t = sample_title();
+            t.words = NonZeroUsize::new(start).unwrap();
+            t.prev_word_preset();
+            assert_eq!(t.words.get(), expected, "prev from {}", start);
+        }
     }
 
     #[test]
