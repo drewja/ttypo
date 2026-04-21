@@ -272,12 +272,12 @@ pub fn run(
                 match code {
                     KeyCode::Esc => title.mode = Mode::Menu,
                     KeyCode::Enter => title.commit_picker(),
-                    KeyCode::Up => {
+                    KeyCode::Up | KeyCode::Char('K') => {
                         if title.picker_cursor > 0 {
                             title.picker_cursor -= 1;
                         }
                     }
-                    KeyCode::Down => {
+                    KeyCode::Down | KeyCode::Char('J') => {
                         if title.picker_cursor + 1 < count {
                             title.picker_cursor += 1;
                         }
@@ -458,16 +458,16 @@ impl Title {
     fn hint_text(&self) -> &'static str {
         match self.cursor {
             Cursor::Language => {
-                "←→ cycle   ⏎ browse all   ↑↓ navigate"
+                "h l cycle   ⏎ browse all   j k navigate"
             }
             Cursor::Words => {
-                "←→ preset   ⇧+←→ ±1   ↑↓ navigate"
+                "h l preset   H L ±1   j k navigate"
             }
             Cursor::SuddenDeath | Cursor::NoBacktrack | Cursor::NoBackspace | Cursor::Ascii => {
-                "space toggle   ↑↓ navigate"
+                "space toggle   j k navigate"
             }
-            Cursor::Start => "⏎ begin test   ↑↓ navigate",
-            Cursor::Quit => "⏎ exit   ↑↓ navigate",
+            Cursor::Start => "⏎ begin test   j k navigate",
+            Cursor::Quit => "⏎ exit   j k navigate",
         }
     }
 
@@ -521,7 +521,7 @@ impl Title {
         }
 
         let footer = Line::from(Span::styled(
-            "type to filter  ⏎ select  esc back",
+            "type to filter  J K navigate  ⏎ select  esc back",
             theme.results_restart_prompt,
         ));
         buf.set_line(chunks[3].x, chunks[3].y, &footer, chunks[3].width);
