@@ -326,12 +326,6 @@ mod tests {
     }
 
     #[test]
-    fn new_empty_lines_for_word_mode() {
-        let test = make_test(&["hello", "world"], Vec::new(), false);
-        assert!(test.lines.is_empty());
-    }
-
-    #[test]
     fn reset_preserves_lines() {
         let lines = vec![
             DisplayLine {

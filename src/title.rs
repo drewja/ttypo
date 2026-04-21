@@ -576,59 +576,25 @@ mod tests {
     }
 
     #[test]
-    fn word_preset_next_from_preset() {
-        let mut t = sample_title();
-        t.words = NonZeroUsize::new(50).unwrap();
-        t.next_word_preset();
-        assert_eq!(t.words.get(), 100);
+    fn word_preset_next_boundaries() {
+        // [start, expected-after-next]: at-preset, between-presets, wrap, above-max
+        for (start, expected) in [(50usize, 100), (73, 100), (500, 10), (1000, 10)] {
+            let mut t = sample_title();
+            t.words = NonZeroUsize::new(start).unwrap();
+            t.next_word_preset();
+            assert_eq!(t.words.get(), expected, "next from {}", start);
+        }
     }
 
     #[test]
-    fn word_preset_next_from_non_preset() {
-        let mut t = sample_title();
-        t.words = NonZeroUsize::new(73).unwrap();
-        t.next_word_preset();
-        assert_eq!(t.words.get(), 100);
-    }
-
-    #[test]
-    fn word_preset_next_wraps_at_max() {
-        let mut t = sample_title();
-        t.words = NonZeroUsize::new(500).unwrap();
-        t.next_word_preset();
-        assert_eq!(t.words.get(), 10);
-    }
-
-    #[test]
-    fn word_preset_next_wraps_above_max() {
-        let mut t = sample_title();
-        t.words = NonZeroUsize::new(1000).unwrap();
-        t.next_word_preset();
-        assert_eq!(t.words.get(), 10);
-    }
-
-    #[test]
-    fn word_preset_prev_from_preset() {
-        let mut t = sample_title();
-        t.words = NonZeroUsize::new(100).unwrap();
-        t.prev_word_preset();
-        assert_eq!(t.words.get(), 50);
-    }
-
-    #[test]
-    fn word_preset_prev_from_non_preset() {
-        let mut t = sample_title();
-        t.words = NonZeroUsize::new(73).unwrap();
-        t.prev_word_preset();
-        assert_eq!(t.words.get(), 50);
-    }
-
-    #[test]
-    fn word_preset_prev_wraps_at_min() {
-        let mut t = sample_title();
-        t.words = NonZeroUsize::new(10).unwrap();
-        t.prev_word_preset();
-        assert_eq!(t.words.get(), 500);
+    fn word_preset_prev_boundaries() {
+        // [start, expected-after-prev]: at-preset, between-presets, wrap-at-min
+        for (start, expected) in [(100usize, 50), (73, 50), (10, 500)] {
+            let mut t = sample_title();
+            t.words = NonZeroUsize::new(start).unwrap();
+            t.prev_word_preset();
+            assert_eq!(t.words.get(), expected, "prev from {}", start);
+        }
     }
 
     #[test]
