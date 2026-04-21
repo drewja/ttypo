@@ -146,25 +146,11 @@ impl ThemedWidget for &Test {
                 let scroll = current_line_idx.saturating_sub(available / 2);
                 display.into_iter().skip(scroll).take(available).collect()
             } else {
-                // Language mode: wrap words at terminal width
-                let mut lines: Vec<Line> = Vec::new();
-                let mut current_line: Vec<Span> = Vec::new();
-                let mut current_width = 0;
-                for word in words {
-                    let word_width: usize = word.iter().map(|s| s.width()).sum();
-
-                    if current_width + word_width > chunks[1].width as usize - 2 {
-                        current_line.push(Span::raw("\n"));
-                        lines.push(Line::from(current_line.clone()));
-                        current_line.clear();
-                        current_width = 0;
-                    }
-
-                    current_line.extend(word);
-                    current_width += word_width;
-                }
-                lines.push(Line::from(current_line));
-                lines
+                // Language mode: one Line containing every word's spans;
+                // Paragraph::wrap below breaks at word boundaries.
+                vec![Line::from(
+                    words.into_iter().flatten().collect::<Vec<Span>>(),
+                )]
             }
         };
         let target = Paragraph::new(target_lines)
