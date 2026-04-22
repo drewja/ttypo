@@ -2,7 +2,6 @@ use crate::config::Theme;
 
 use super::test::{Test, TestWord, results};
 
-use crossterm::event::KeyCode;
 use ratatui::{
     buffer::Buffer,
     layout::{Constraint, Direction, Layout, Rect},
@@ -374,16 +373,8 @@ impl ThemedWidget for &results::Results {
             .accuracy
             .per_key
             .iter()
-            .filter_map(|(key, acc)| match key.code {
-                KeyCode::Char(c)
-                    if c != ' '
-                        && self.test_chars.contains(&c)
-                        && acc.numerator < acc.denominator =>
-                {
-                    Some((c, acc))
-                }
-                _ => None,
-            })
+            .filter(|(c, acc)| **c != ' ' && acc.numerator < acc.denominator)
+            .map(|(c, acc)| (*c, acc))
             .collect();
         worst_keys.sort_unstable_by_key(|(_, acc)| *acc);
 

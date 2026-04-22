@@ -24,6 +24,10 @@ pub struct TestEvent {
     pub time: Instant,
     pub key: KeyEvent,
     pub correct: Option<bool>,
+    /// Target character expected at the cursor position when this press
+    /// landed. `None` for non-char events (space/enter commits, backspace,
+    /// Ctrl-h/Ctrl-w) and for presses past the end of the word's target.
+    pub target: Option<char>,
 }
 
 pub fn is_missed_word_event(event: &TestEvent) -> bool {
@@ -35,6 +39,7 @@ impl fmt::Debug for TestEvent {
         f.debug_struct("TestEvent")
             .field("time", &String::from("Instant { ... }"))
             .field("key", &self.key)
+            .field("target", &self.target)
             .finish()
     }
 }
@@ -160,6 +165,7 @@ impl Test {
                         time: Instant::now(),
                         correct: Some(true),
                         key,
+                        target: None,
                     })
                 } else if !word.progress.is_empty() || target.is_empty() {
                     let correct = target == word.progress;
@@ -170,6 +176,7 @@ impl Test {
                             time: Instant::now(),
                             correct: Some(correct),
                             key,
+                            target: None,
                         });
                         self.next_word();
                         self.skip_non_typeable_words();
@@ -184,6 +191,7 @@ impl Test {
                         time: Instant::now(),
                         correct: Some(!target.starts_with(&word.progress[..])),
                         key,
+                        target: None,
                     });
                     word.progress.pop();
                 }
@@ -202,10 +210,12 @@ impl Test {
                     time: Instant::now(),
                     correct: None,
                     key,
+                    target: None,
                 });
                 word.progress.clear();
             }
             KeyCode::Char(c) => {
+                let target_ch = target.chars().nth(word.progress.len());
                 word.progress.push(c);
                 let correct = target.starts_with(&word.progress[..]);
                 if self.sudden_death_enabled && !correct {
@@ -215,6 +225,7 @@ impl Test {
                         time: Instant::now(),
                         correct: Some(correct),
                         key,
+                        target: target_ch,
                     });
                     if word.progress == target && self.current_word == self.words.len() - 1 {
                         self.complete = true;

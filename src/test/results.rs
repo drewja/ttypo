@@ -1,7 +1,7 @@
-use super::{Test, is_missed_word_event, is_typeable};
+use super::{Test, is_missed_word_event};
 
 use crossterm::event::KeyEvent;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::{cmp, fmt};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -53,7 +53,10 @@ pub struct TimingData {
 
 pub struct AccuracyData {
     pub overall: Fraction,
-    pub per_key: HashMap<KeyEvent, Fraction>,
+    /// Per-target-character accuracy. A press contributes here iff a
+    /// target character existed at the cursor position; it counts as
+    /// correct iff the pressed char equals that target.
+    pub per_key: HashMap<char, Fraction>,
 }
 
 pub struct Results {
@@ -62,7 +65,6 @@ pub struct Results {
     pub missed_words: Vec<(String, usize)>,
     pub is_repeat: bool,
     pub completed: bool,
-    pub test_chars: HashSet<char>,
 }
 
 impl From<&Test> for Results {
@@ -93,20 +95,12 @@ impl From<&Test> for Results {
         let mut timing = calc_timing(&events);
         timing.missed_word_event_indices = missed_indices;
 
-        let test_chars = test
-            .words
-            .iter()
-            .flat_map(|w| w.text.chars())
-            .filter(|c| !test.ascii || is_typeable(*c))
-            .collect();
-
         Self {
             timing,
             accuracy: calc_accuracy(&events),
             missed_words: calc_missed_words(test),
             is_repeat: false,
             completed: test.complete,
-            test_chars,
         }
     }
 }
@@ -153,23 +147,27 @@ fn calc_accuracy(events: &[&super::TestEvent]) -> AccuracyData {
         per_key: HashMap::new(),
     };
 
-    events
-        .iter()
-        .filter(|event| event.correct.is_some())
-        .for_each(|event| {
-            let key = acc
-                .per_key
-                .entry(event.key)
-                .or_insert_with(|| Fraction::new(0, 0));
-
+    for event in events {
+        if let Some(correct) = event.correct {
             acc.overall.denominator += 1;
-            key.denominator += 1;
-
-            if event.correct.unwrap() {
+            if correct {
                 acc.overall.numerator += 1;
-                key.numerator += 1;
             }
-        });
+        }
+
+        if let (Some(target), crossterm::event::KeyCode::Char(pressed)) =
+            (event.target, event.key.code)
+        {
+            let bucket = acc
+                .per_key
+                .entry(target)
+                .or_insert_with(|| Fraction::new(0, 0));
+            bucket.denominator += 1;
+            if pressed == target {
+                bucket.numerator += 1;
+            }
+        }
+    }
 
     acc
 }
@@ -218,6 +216,21 @@ mod tests {
             time,
             key: key(c),
             correct,
+            target: None,
+        }
+    }
+
+    fn event_with_target(
+        time: Instant,
+        pressed: char,
+        target: char,
+        correct: Option<bool>,
+    ) -> TestEvent {
+        TestEvent {
+            time,
+            key: key(pressed),
+            correct,
+            target: Some(target),
         }
     }
 
@@ -287,6 +300,40 @@ mod tests {
     }
 
     #[test]
+    fn calc_accuracy_buckets_by_target_not_pressed_key() {
+        // User pressed 'd' when target was 's'. The mistake should be
+        // attributed to 's', not 'd'.
+        let base = Instant::now();
+        let events = vec![
+            event_with_target(base, 'd', 's', Some(false)),
+            event_with_target(base, 's', 's', Some(true)),
+        ];
+        let refs: Vec<&TestEvent> = events.iter().collect();
+        let acc = calc_accuracy(&refs);
+        assert!(acc.per_key.get(&'d').is_none(), "'d' should not bucket");
+        assert_eq!(acc.per_key.get(&'s'), Some(&Fraction::new(1, 2)));
+    }
+
+    #[test]
+    fn calc_accuracy_mid_word_slip_does_not_penalise_later_correct_chars() {
+        // Target "cat"; user types 'c','d','t' without backspacing.
+        // Progress "cdt" never starts "cat" so the 't' event has correct=false,
+        // but the 't' press itself matched its target 't' and should count
+        // as 1/1, not 0/1.
+        let base = Instant::now();
+        let events = vec![
+            event_with_target(base, 'c', 'c', Some(true)),
+            event_with_target(base, 'd', 'a', Some(false)),
+            event_with_target(base, 't', 't', Some(false)),
+        ];
+        let refs: Vec<&TestEvent> = events.iter().collect();
+        let acc = calc_accuracy(&refs);
+        assert_eq!(acc.per_key.get(&'c'), Some(&Fraction::new(1, 1)));
+        assert_eq!(acc.per_key.get(&'a'), Some(&Fraction::new(0, 1)));
+        assert_eq!(acc.per_key.get(&'t'), Some(&Fraction::new(1, 1)));
+    }
+
+    #[test]
     fn calc_accuracy_skips_none_correct_events() {
         // Ctrl-w / Ctrl-h push events with correct=None; they must not affect the ratio.
         let base = Instant::now();
@@ -348,20 +395,4 @@ mod tests {
         assert_eq!(results.timing.missed_word_event_indices, vec![4]);
     }
 
-    #[test]
-    fn results_test_chars_filters_unicode_in_ascii_mode() {
-        let test = make_test(&["café"], true);
-        let results = Results::from(&test);
-        assert!(results.test_chars.contains(&'c'));
-        assert!(results.test_chars.contains(&'a'));
-        assert!(results.test_chars.contains(&'f'));
-        assert!(!results.test_chars.contains(&'é'));
-    }
-
-    #[test]
-    fn results_test_chars_keeps_unicode_in_non_ascii_mode() {
-        let test = make_test(&["café"], false);
-        let results = Results::from(&test);
-        assert!(results.test_chars.contains(&'é'));
-    }
 }
