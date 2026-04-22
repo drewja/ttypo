@@ -392,11 +392,7 @@ impl Title {
             theme.prompt_untyped
         };
 
-        let banner_w = BANNER
-            .lines()
-            .map(|l| l.chars().count())
-            .max()
-            .unwrap_or(0);
+        let banner_w = BANNER.lines().map(|l| l.chars().count()).max().unwrap_or(0);
         let lines: Vec<Line> = BANNER
             .lines()
             .map(|l| {
@@ -457,12 +453,8 @@ impl Title {
 
     fn hint_text(&self) -> &'static str {
         match self.cursor {
-            Cursor::Language => {
-                "h l cycle   ⏎ browse all   j k navigate"
-            }
-            Cursor::Words => {
-                "h l preset   H L ±1   j k navigate"
-            }
+            Cursor::Language => "h l cycle   ⏎ browse all   j k navigate",
+            Cursor::Words => "h l preset   H L ±1   j k navigate",
             Cursor::SuddenDeath | Cursor::NoBacktrack | Cursor::NoBackspace | Cursor::Ascii => {
                 "space toggle   j k navigate"
             }

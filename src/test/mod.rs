@@ -82,6 +82,10 @@ pub struct DisplayLine {
 pub struct Test {
     pub words: Vec<TestWord>,
     pub current_word: usize,
+    /// Index of the first word typed in the current session. Normally 0, but
+    /// set forward by `resume_at` when a saved-progress test is resumed so
+    /// live WPM and results stats only reflect this session's work.
+    pub session_start_word: usize,
     pub complete: bool,
     pub backtracking_enabled: bool,
     pub sudden_death_enabled: bool,
@@ -108,6 +112,7 @@ impl Test {
         let mut test = Self {
             words: words.into_iter().map(TestWord::from).collect(),
             current_word: 0,
+            session_start_word: 0,
             complete: false,
             backtracking_enabled,
             sudden_death_enabled,
@@ -121,6 +126,23 @@ impl Test {
         test
     }
 
+    /// Resume at `word_index`, synthesizing completed progress for every word
+    /// in `[0, word_index)` so they render in the "correct" color via the
+    /// existing draw path. Clamped to the last word if out of range.
+    pub fn resume_at(&mut self, word_index: usize) {
+        if self.words.is_empty() {
+            return;
+        }
+        let target_index = word_index.min(self.words.len() - 1);
+        let ascii = self.ascii;
+        for word in self.words.iter_mut().take(target_index) {
+            word.progress = target_text(&word.text, ascii);
+        }
+        self.current_word = target_index;
+        self.session_start_word = target_index;
+        self.skip_non_typeable_words();
+    }
+
     pub fn elapsed_secs(&self) -> f64 {
         self.start_time
             .map(|t| t.elapsed().as_secs_f64())
@@ -132,7 +154,10 @@ impl Test {
         if elapsed < 0.5 {
             return 0.0;
         }
-        let chars_typed: usize = self.words[..self.current_word]
+        // Count only chars typed this session; resumed prefix words are
+        // pre-filled but weren't typed now.
+        let session_start = self.session_start_word.min(self.current_word);
+        let chars_typed: usize = self.words[session_start..self.current_word]
             .iter()
             .map(|w| w.progress.len())
             .sum::<usize>()
@@ -284,6 +309,7 @@ impl Test {
 mod tests {
     use super::*;
     use crossterm::event::KeyEventState;
+    use std::time::Duration;
 
     fn make_test(words: &[&str], lines: Vec<DisplayLine>, ascii: bool) -> Test {
         Test::new(
@@ -439,5 +465,50 @@ mod tests {
         let test = make_test(&["\u{2014}", "ok"], Vec::new(), false);
         // without ascii, no auto-skipping
         assert_eq!(test.current_word, 0);
+    }
+
+    #[test]
+    fn resume_at_fills_progress_for_prefix_words() {
+        let mut test = make_test(&["alpha", "beta", "gamma", "delta"], Vec::new(), false);
+        test.resume_at(2);
+        assert_eq!(test.words[0].progress, "alpha");
+        assert_eq!(test.words[1].progress, "beta");
+        // current word onward stays empty
+        assert_eq!(test.words[2].progress, "");
+        assert_eq!(test.words[3].progress, "");
+        assert_eq!(test.current_word, 2);
+        assert_eq!(test.session_start_word, 2);
+    }
+
+    #[test]
+    fn resume_at_clamps_past_end() {
+        let mut test = make_test(&["a", "b", "c"], Vec::new(), false);
+        test.resume_at(999);
+        assert_eq!(test.current_word, 2);
+        assert_eq!(test.session_start_word, 2);
+        assert_eq!(test.words[0].progress, "a");
+        assert_eq!(test.words[1].progress, "b");
+    }
+
+    #[test]
+    fn resume_at_zero_is_noop() {
+        let mut test = make_test(&["a", "b"], Vec::new(), false);
+        test.resume_at(0);
+        assert_eq!(test.current_word, 0);
+        assert_eq!(test.session_start_word, 0);
+        assert!(test.words.iter().all(|w| w.progress.is_empty()));
+    }
+
+    #[test]
+    fn live_wpm_excludes_resumed_prefix() {
+        // Resume past word 0 ("aaaaa"), then type 5 chars of word 1 ("bbbbb")
+        // over 60s → 1 WPM (5 chars / 5 chars-per-word / 1 minute).
+        let mut test = make_test(&["aaaaa", "bbbbb"], Vec::new(), false);
+        test.resume_at(1);
+        test.words[1].progress = "bbbbb".into();
+        test.start_time = Some(Instant::now() - Duration::from_secs(60));
+        let wpm = test.live_wpm();
+        // Without the session_start_word fix, this would be 2.0 (10 chars).
+        assert!((wpm - 1.0).abs() < 1e-6, "expected ~1.0 wpm, got {}", wpm);
     }
 }

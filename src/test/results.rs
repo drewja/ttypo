@@ -260,7 +260,7 @@ mod tests {
     #[test]
     fn calc_timing_per_event_durations() {
         let base = Instant::now();
-        let events = vec![
+        let events = [
             event(base, 'a', Some(true)),
             event(base + Duration::from_millis(100), 'b', Some(true)),
             event(base + Duration::from_millis(300), 'c', Some(true)),
@@ -276,7 +276,7 @@ mod tests {
     fn calc_timing_overall_cps() {
         let base = Instant::now();
         // 3 events, 1s apart → 2 intervals totalling 2s → cps = 1.0
-        let events = vec![
+        let events = [
             event(base, 'a', Some(true)),
             event(base + Duration::from_secs(1), 'b', Some(true)),
             event(base + Duration::from_secs(2), 'c', Some(true)),
@@ -289,7 +289,7 @@ mod tests {
     #[test]
     fn calc_accuracy_counts_correct_vs_incorrect() {
         let base = Instant::now();
-        let events = vec![
+        let events = [
             event(base, 'a', Some(true)),
             event(base, 'b', Some(false)),
             event(base, 'c', Some(true)),
@@ -304,13 +304,13 @@ mod tests {
         // User pressed 'd' when target was 's'. The mistake should be
         // attributed to 's', not 'd'.
         let base = Instant::now();
-        let events = vec![
+        let events = [
             event_with_target(base, 'd', 's', Some(false)),
             event_with_target(base, 's', 's', Some(true)),
         ];
         let refs: Vec<&TestEvent> = events.iter().collect();
         let acc = calc_accuracy(&refs);
-        assert!(acc.per_key.get(&'d').is_none(), "'d' should not bucket");
+        assert!(!acc.per_key.contains_key(&'d'), "'d' should not bucket");
         assert_eq!(acc.per_key.get(&'s'), Some(&Fraction::new(1, 2)));
     }
 
@@ -321,7 +321,7 @@ mod tests {
         // but the 't' press itself matched its target 't' and should count
         // as 1/1, not 0/1.
         let base = Instant::now();
-        let events = vec![
+        let events = [
             event_with_target(base, 'c', 'c', Some(true)),
             event_with_target(base, 'd', 'a', Some(false)),
             event_with_target(base, 't', 't', Some(false)),
@@ -337,7 +337,7 @@ mod tests {
     fn calc_accuracy_skips_none_correct_events() {
         // Ctrl-w / Ctrl-h push events with correct=None; they must not affect the ratio.
         let base = Instant::now();
-        let events = vec![
+        let events = [
             event(base, 'a', Some(true)),
             event(base, 'w', None),
             event(base, 'b', Some(false)),
@@ -394,5 +394,4 @@ mod tests {
         let results = Results::from(&test);
         assert_eq!(results.timing.missed_word_event_indices, vec![4]);
     }
-
 }

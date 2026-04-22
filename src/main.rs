@@ -1,9 +1,12 @@
 mod config;
+mod progress;
+mod resume_prompt;
 mod test;
 mod title;
 mod ui;
 
 use config::Config;
+use progress::ProgressStore;
 use test::{DisplayLine, Test, results::Results};
 
 use clap::{CommandFactory, Parser, Subcommand};
@@ -76,6 +79,14 @@ struct Opt {
     #[arg(long)]
     ascii: bool,
 
+    /// Ignore saved progress for the input file and start from the beginning
+    #[arg(long)]
+    restart: bool,
+
+    /// Do not persist per-document progress for this invocation
+    #[arg(long)]
+    no_save: bool,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -92,20 +103,19 @@ enum Command {
 impl Opt {
     /// Generate test contents.
     ///
-    /// Returns `(words, lines)` where `lines` describes the original file
-    /// layout (empty for language/word-list mode).
-    fn gen_contents(&self) -> Option<(Vec<String>, Vec<DisplayLine>)> {
+    /// Returns `Ok(Some((words, lines)))` on success. `lines` describes the
+    /// original file layout (empty for language/word-list mode). Returns
+    /// `Ok(None)` only in language mode when no matching language file is
+    /// found, and `Err` on I/O failure reading a file or stdin.
+    fn gen_contents(&self) -> io::Result<Option<(Vec<String>, Vec<DisplayLine>)>> {
         match &self.contents {
             Some(path) => {
                 let text = if path.as_os_str() == "-" {
                     let mut buf = String::new();
-                    std::io::stdin()
-                        .lock()
-                        .read_to_string(&mut buf)
-                        .expect("Error reading from stdin.");
+                    std::io::stdin().lock().read_to_string(&mut buf)?;
                     buf
                 } else {
-                    fs::read_to_string(path).expect("Error reading file.")
+                    fs::read_to_string(path)?
                 };
 
                 let mut words = Vec::new();
@@ -134,7 +144,7 @@ impl Opt {
                     });
                 }
 
-                Some((words, lines))
+                Ok(Some((words, lines)))
             }
             None => {
                 let lang_name = self
@@ -142,7 +152,7 @@ impl Opt {
                     .clone()
                     .unwrap_or_else(|| self.config().default_language);
 
-                let bytes: Vec<u8> = self
+                let Some(bytes) = self
                     .language_file
                     .as_ref()
                     .map(fs::read)
@@ -151,7 +161,10 @@ impl Opt {
                     .or_else(|| {
                         Resources::get(&format!("language/{}", &lang_name))
                             .map(|f| f.data.into_owned())
-                    })?;
+                    })
+                else {
+                    return Ok(None);
+                };
 
                 let mut rng = rand::rng();
 
@@ -169,7 +182,7 @@ impl Opt {
                     .collect();
                 contents.shuffle(&mut rng);
 
-                Some((contents, Vec::new()))
+                Ok(Some((contents, Vec::new())))
             }
         }
     }
@@ -214,6 +227,14 @@ impl Opt {
             .join("ttypo")
     }
 
+    /// Data directory (persistent state: per-document typing progress, etc.).
+    /// Linux: `~/.local/share/ttypo`.
+    fn data_dir(&self) -> PathBuf {
+        dirs::data_dir()
+            .expect("Failed to find data directory.")
+            .join("ttypo")
+    }
+
     /// Language directory under config directory
     fn language_dir(&self) -> PathBuf {
         self.config_dir().join("language")
@@ -248,6 +269,46 @@ impl Opt {
         if found { Ok(()) } else { Err(lang) }
     }
 }
+
+/// Context carried for the duration of a file-mode session so we can save
+/// progress without recomputing the canonical path / content hash each time.
+struct ResumeCtx {
+    canonical_path: PathBuf,
+    content_hash: String,
+    total_words: usize,
+    source_label: String,
+    save_enabled: bool,
+}
+
+fn save_progress(store: &mut ProgressStore, ctx: &ResumeCtx, word_index: usize) {
+    if !ctx.save_enabled {
+        return;
+    }
+    store.upsert(
+        &ctx.canonical_path,
+        progress::Entry {
+            content_hash: ctx.content_hash.clone(),
+            word_index,
+            total_words: ctx.total_words,
+            updated_at: progress::now_unix(),
+            source_label: ctx.source_label.clone(),
+        },
+    );
+    // Best-effort — do not interrupt typing on I/O error.
+    let _ = store.save();
+}
+
+fn clear_progress(store: &mut ProgressStore, ctx: &ResumeCtx) {
+    if !ctx.save_enabled {
+        return;
+    }
+    store.remove(&ctx.canonical_path);
+    let _ = store.save();
+}
+
+/// Save every this-many newly-typed words so a crash or kill doesn't lose
+/// more than a handful of words on a long document.
+const PERIODIC_SAVE_INTERVAL: usize = 50;
 
 fn teardown() -> io::Result<()> {
     terminal::disable_raw_mode()?;
@@ -326,19 +387,32 @@ fn main() -> io::Result<()> {
 
     // File/stdin mode: read contents BEFORE entering the alt screen so stdin
     // still points at the real TTY/pipe.
-    let mut file_contents: Option<(Vec<String>, Vec<DisplayLine>)> = if opt.contents.is_some() {
-        let r = opt.gen_contents().expect(
-            "Couldn't get test contents. Make sure the specified language actually exists.",
-        );
-        if r.0.is_empty() {
-            eprintln!("Error: the provided file or language contains no words to type.");
-            eprintln!("If you specified a file, make sure it isn't empty.");
-            std::process::exit(1);
-        }
-        Some(r)
-    } else {
-        None
-    };
+    let mut file_contents: Option<(Vec<String>, Vec<DisplayLine>)> =
+        if let Some(path) = opt.contents.as_ref() {
+            let r = match opt.gen_contents() {
+                Ok(Some(r)) => r,
+                Ok(None) => {
+                    eprintln!("error: couldn't get test contents.");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    if path.as_os_str() == "-" {
+                        eprintln!("error: failed to read from stdin: {}", e);
+                    } else {
+                        eprintln!("error: cannot read '{}': {}", path.display(), e);
+                    }
+                    std::process::exit(1);
+                }
+            };
+            if r.0.is_empty() {
+                eprintln!("Error: the provided file or language contains no words to type.");
+                eprintln!("If you specified a file, make sure it isn't empty.");
+                std::process::exit(1);
+            }
+            Some(r)
+        } else {
+            None
+        };
 
     terminal::enable_raw_mode()?;
     execute!(
@@ -348,6 +422,8 @@ fn main() -> io::Result<()> {
         terminal::EnterAlternateScreen,
     )?;
     terminal.clear()?;
+
+    let mut progress_store = ProgressStore::load(opt.data_dir());
 
     // Outer "session" loop: re-entered when the user hits 'm' on the results
     // screen to return to the main menu. File mode never re-enters since 'm'
@@ -380,11 +456,19 @@ fn main() -> io::Result<()> {
 
         let (contents, lines) = match file_contents.take() {
             Some(fc) => fc,
-            None => opt.gen_contents().unwrap_or_else(|| {
-                let _ = teardown();
-                eprintln!("Couldn't get test contents.");
-                std::process::exit(1);
-            }),
+            None => match opt.gen_contents() {
+                Ok(Some(r)) => r,
+                Ok(None) => {
+                    let _ = teardown();
+                    eprintln!("Couldn't get test contents.");
+                    std::process::exit(1);
+                }
+                Err(e) => {
+                    let _ = teardown();
+                    eprintln!("error: {}", e);
+                    std::process::exit(1);
+                }
+            },
         };
         if contents.is_empty() {
             let _ = teardown();
@@ -410,6 +494,48 @@ fn main() -> io::Result<()> {
             .then(|| (contents.clone(), lines.clone()));
         let is_file_mode = saved_contents.is_some();
 
+        // Build resume context for real-file mode (excludes stdin) so we can
+        // look up and save per-document progress.
+        let resume_ctx: Option<ResumeCtx> = match &opt.contents {
+            Some(path) if path.as_os_str() != "-" => {
+                progress::hash_file(path).ok().map(|hash| ResumeCtx {
+                    canonical_path: progress::canonicalize(path),
+                    content_hash: hash,
+                    total_words: contents.len(),
+                    source_label: source.clone(),
+                    save_enabled: !opt.no_save,
+                })
+            }
+            _ => None,
+        };
+
+        // If the user previously saved progress for this file, prompt to resume.
+        let mut initial_word_index: usize = 0;
+        if let Some(ctx) = resume_ctx.as_ref()
+            && ctx.save_enabled
+            && !opt.restart
+            && let Some(entry) = progress_store.lookup(&ctx.canonical_path).cloned()
+        {
+            let hash_matches = entry.content_hash == ctx.content_hash;
+            let info = resume_prompt::ResumeInfo {
+                source_label: ctx.source_label.clone(),
+                word_index: entry.word_index,
+                total_words: ctx.total_words,
+                updated_at: entry.updated_at,
+                hash_matches,
+            };
+            match resume_prompt::run(&mut terminal, &config, &info)? {
+                resume_prompt::Outcome::Resume => {
+                    initial_word_index = entry.word_index.min(ctx.total_words.saturating_sub(1));
+                }
+                resume_prompt::Outcome::Fresh => {}
+                resume_prompt::Outcome::Discard => {
+                    clear_progress(&mut progress_store, ctx);
+                }
+                resume_prompt::Outcome::Quit => break 'outer,
+            }
+        }
+
         let make_test = |contents: Vec<String>, lines: Vec<DisplayLine>, source: String| {
             Test::new(
                 contents,
@@ -426,15 +552,18 @@ fn main() -> io::Result<()> {
             saved_contents
                 .as_ref()
                 .map(|(c, l)| (c.clone(), l.clone()))
-                .unwrap_or_else(|| {
-                    opt.gen_contents().expect(
-                        "Couldn't get test contents. Make sure the specified language actually exists.",
-                    )
-                })
+                .unwrap_or_else(|| opt.gen_contents().ok().flatten().unwrap_or_default())
         };
 
-        let mut paused_test: Option<Test> = None;
-        let mut state = State::Test(make_test(contents, lines, source.clone()));
+        let mut paused_test: Option<(Test, bool)> = None;
+        let mut is_original_test = true;
+        let mut last_saved_word = initial_word_index;
+
+        let mut initial_test = make_test(contents, lines, source.clone());
+        if initial_word_index > 0 {
+            initial_test.resume_at(initial_word_index);
+        }
+        let mut state = State::Test(initial_test);
 
         state.render_into(&mut terminal, &config)?;
         'session: loop {
@@ -453,7 +582,15 @@ fn main() -> io::Result<()> {
                     kind: KeyEventKind::Press,
                     modifiers: KeyModifiers::CONTROL,
                     ..
-                }) => break 'outer,
+                }) => {
+                    // Best-effort save on Ctrl-C so unpaused progress isn't lost.
+                    if is_original_test
+                        && let (State::Test(test), Some(ctx)) = (&state, resume_ctx.as_ref())
+                    {
+                        save_progress(&mut progress_store, ctx, test.current_word);
+                    }
+                    break 'outer;
+                }
                 Event::Key(KeyEvent {
                     code: KeyCode::Esc,
                     kind: KeyEventKind::Press,
@@ -462,9 +599,13 @@ fn main() -> io::Result<()> {
                 }) => {
                     state = match state {
                         State::Test(test) => {
+                            if is_original_test && let Some(ctx) = resume_ctx.as_ref() {
+                                save_progress(&mut progress_store, ctx, test.current_word);
+                                last_saved_word = test.current_word;
+                            }
                             let mut results = Results::from(&test);
                             results.is_repeat = is_file_mode;
-                            paused_test = Some(test);
+                            paused_test = Some((test, is_original_test));
                             State::Results(results)
                         }
                         State::Results(_) => break 'outer,
@@ -478,10 +619,19 @@ fn main() -> io::Result<()> {
                     if let Event::Key(key) = event {
                         test.handle_key(key);
                         if test.complete {
+                            if is_original_test && let Some(ctx) = resume_ctx.as_ref() {
+                                clear_progress(&mut progress_store, ctx);
+                            }
                             let mut results = Results::from(&*test);
                             results.is_repeat = is_file_mode;
                             paused_test = None;
                             state = State::Results(results);
+                        } else if is_original_test
+                            && test.current_word >= last_saved_word + PERIODIC_SAVE_INTERVAL
+                            && let Some(ctx) = resume_ctx.as_ref()
+                        {
+                            save_progress(&mut progress_store, ctx, test.current_word);
+                            last_saved_word = test.current_word;
                         }
                     }
                 }
@@ -500,6 +650,8 @@ fn main() -> io::Result<()> {
                                 }
                                 state =
                                     State::Test(make_test(new_contents, new_lines, source.clone()));
+                                is_original_test = true;
+                                last_saved_word = 0;
                             }
                             'p' => {
                                 if result.missed_words.is_empty() {
@@ -516,10 +668,12 @@ fn main() -> io::Result<()> {
                                     Vec::new(),
                                     "practice".to_string(),
                                 ));
+                                is_original_test = false;
                             }
                             'c' => {
-                                if let Some(test) = paused_test.take() {
+                                if let Some((test, was_original)) = paused_test.take() {
                                     state = State::Test(test);
+                                    is_original_test = was_original;
                                 }
                             }
                             'q' => break 'outer,
@@ -557,6 +711,8 @@ mod tests {
             sudden_death: false,
             no_backspace: false,
             ascii,
+            restart: false,
+            no_save: false,
             command: None,
         }
     }
@@ -567,7 +723,7 @@ mod tests {
         let path = dir.path().join("empty.txt");
         fs::File::create(&path).unwrap();
 
-        let (contents, lines) = make_opt(path, false).gen_contents().unwrap();
+        let (contents, lines) = make_opt(path, false).gen_contents().unwrap().unwrap();
         assert!(contents.is_empty(), "empty file should produce empty vec");
         assert!(lines.is_empty());
     }
@@ -579,7 +735,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         writeln!(f, "hello world rust").unwrap();
 
-        let (contents, lines) = make_opt(path, false).gen_contents().unwrap();
+        let (contents, lines) = make_opt(path, false).gen_contents().unwrap().unwrap();
         assert_eq!(contents, vec!["hello", "world", "rust"]);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].word_start, 0);
@@ -593,7 +749,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         writeln!(f, "hello\u{2014}world \u{201c}quoted\u{201d}").unwrap();
 
-        let (contents, _) = make_opt(path, false).gen_contents().unwrap();
+        let (contents, _) = make_opt(path, false).gen_contents().unwrap().unwrap();
         assert_eq!(
             contents,
             vec!["hello\u{2014}world", "\u{201c}quoted\u{201d}"]
@@ -607,7 +763,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         write!(f, "first line\nsecond line\n\nfourth line").unwrap();
 
-        let (contents, lines) = make_opt(path, false).gen_contents().unwrap();
+        let (contents, lines) = make_opt(path, false).gen_contents().unwrap().unwrap();
         assert_eq!(
             contents,
             vec!["first", "line", "second", "line", "fourth", "line"]
@@ -627,7 +783,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         write!(f, "hello\n   \n  \t  \nworld").unwrap();
 
-        let (contents, lines) = make_opt(path, false).gen_contents().unwrap();
+        let (contents, lines) = make_opt(path, false).gen_contents().unwrap().unwrap();
         assert_eq!(contents, vec!["hello", "world"]);
         // 4 lines total: "hello", whitespace-only, whitespace-only, "world"
         assert_eq!(lines.len(), 4);
@@ -644,7 +800,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         write!(f, "hello \u{2014}\u{2014}\u{2014} world").unwrap();
 
-        let (contents, _) = make_opt(path, false).gen_contents().unwrap();
+        let (contents, _) = make_opt(path, false).gen_contents().unwrap().unwrap();
         assert_eq!(contents, vec!["hello", "\u{2014}\u{2014}\u{2014}", "world"]);
     }
 
@@ -655,7 +811,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         write!(f, "it's a \"test\" (100%); done!").unwrap();
 
-        let (contents, _) = make_opt(path, false).gen_contents().unwrap();
+        let (contents, _) = make_opt(path, false).gen_contents().unwrap().unwrap();
         assert_eq!(contents, vec!["it's", "a", "\"test\"", "(100%);", "done!"]);
     }
 
@@ -666,7 +822,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         write!(f, "hello\n\tindented\n\t\tdeep").unwrap();
 
-        let (contents, lines) = make_opt(path, false).gen_contents().unwrap();
+        let (contents, lines) = make_opt(path, false).gen_contents().unwrap().unwrap();
         assert_eq!(contents, vec!["hello", "indented", "deep"]);
         assert_eq!(lines[0].indent, "");
         assert_eq!(lines[1].indent, "    "); // 1 tab = 4 spaces
@@ -680,7 +836,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         write!(f, "hel\x07lo wor\x00ld").unwrap();
 
-        let (contents, _) = make_opt(path, false).gen_contents().unwrap();
+        let (contents, _) = make_opt(path, false).gen_contents().unwrap().unwrap();
         assert_eq!(contents, vec!["hello", "world"]);
     }
 }

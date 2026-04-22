@@ -1675,6 +1675,7 @@ dependencies = [
  "ratatui",
  "rust-embed",
  "serde",
+ "sha2",
  "tempfile",
  "toml",
 ]
