@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
-use std::io;
+use std::io::{self, Read};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -43,7 +43,7 @@ pub struct ProgressStore {
 
 impl ProgressStore {
     /// Load the store from `<dir>/progress.toml`. Returns an empty store if
-    /// the file is missing or malformed — persistence is best-effort.
+    /// the file is missing or malformed. Persistence is best-effort.
     pub fn load(dir: PathBuf) -> Self {
         let path = dir.join(FILENAME);
         let documents = match fs::read_to_string(&path) {
@@ -88,11 +88,30 @@ pub fn canonicalize(path: &Path) -> PathBuf {
     fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf())
 }
 
-/// Hex-encoded SHA-256 hash of file bytes.
-pub fn hash_file(path: &Path) -> io::Result<String> {
-    let bytes = fs::read(path)?;
+/// Hex-encoded SHA-256 hash of the given bytes. Prefer this when the file
+/// has already been loaded (e.g. via mmap) to avoid a redundant read.
+pub fn hash_bytes(bytes: &[u8]) -> String {
     let mut hasher = Sha256::new();
-    hasher.update(&bytes);
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
+/// Hex-encoded SHA-256 hash of a file's bytes, streamed so we never hold the
+/// whole file in memory at once. The mmap-backed flow prefers `hash_bytes`
+/// over the already-mapped slice; this is kept for callers without bytes in
+/// hand.
+#[cfg_attr(not(test), allow(dead_code))]
+pub fn hash_file(path: &Path) -> io::Result<String> {
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
     Ok(format!("{:x}", hasher.finalize()))
 }
 

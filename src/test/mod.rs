@@ -1,7 +1,11 @@
 pub mod results;
 
+use crate::content::Content;
+
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use std::fmt;
+use std::ops::Range;
+use std::sync::Arc;
 use std::time::Instant;
 
 /// Returns true if a character is printable ASCII (0x20-0x7E).
@@ -9,13 +13,15 @@ pub fn is_typeable(c: char) -> bool {
     c.is_ascii() && !c.is_ascii_control()
 }
 
-/// Returns the typeable portion of `text`.
-/// When `ascii` is false the full text is returned unchanged.
-fn target_text(text: &str, ascii: bool) -> String {
+/// Returns the typeable portion of `text` as a `Box<str>`.
+fn target_text(text: &str, ascii: bool) -> Box<str> {
     if ascii {
-        text.chars().filter(|c| is_typeable(*c)).collect()
+        text.chars()
+            .filter(|c| is_typeable(*c))
+            .collect::<String>()
+            .into_boxed_str()
     } else {
-        text.to_string()
+        text.to_string().into_boxed_str()
     }
 }
 
@@ -46,25 +52,13 @@ impl fmt::Debug for TestEvent {
 
 #[derive(Debug, Clone)]
 pub struct TestWord {
-    pub text: String,
+    /// Byte range into the owning `Test::content.as_str()`.
+    pub range: Range<u32>,
+    /// Cached target string (ascii-filtered when `ascii`, else equal to
+    /// the word's display text). Computed once at construction.
+    pub target: Box<str>,
     pub progress: String,
     pub events: Vec<TestEvent>,
-}
-
-impl From<String> for TestWord {
-    fn from(string: String) -> Self {
-        TestWord {
-            text: string,
-            progress: String::new(),
-            events: Vec::new(),
-        }
-    }
-}
-
-impl From<&str> for TestWord {
-    fn from(string: &str) -> Self {
-        Self::from(string.to_string())
-    }
 }
 
 /// A line of the original file, used in raw mode for display.
@@ -80,6 +74,7 @@ pub struct DisplayLine {
 
 #[derive(Debug, Clone)]
 pub struct Test {
+    pub content: Arc<Content>,
     pub words: Vec<TestWord>,
     pub current_word: usize,
     /// Index of the first word typed in the current session. Normally 0, but
@@ -90,40 +85,62 @@ pub struct Test {
     pub backtracking_enabled: bool,
     pub sudden_death_enabled: bool,
     pub backspace_enabled: bool,
-    /// Original line layout for raw/file mode (empty = word-wrap mode).
-    pub lines: Vec<DisplayLine>,
     /// When true, non-typeable characters are skipped during typing.
     pub ascii: bool,
     pub start_time: Option<Instant>,
-    /// Label describing the source of the test contents (language name, filename, or "stdin").
+    /// Label describing the source of the test contents (language name,
+    /// filename, "stdin", or "practice").
     pub source: String,
 }
 
 impl Test {
     pub fn new(
-        words: Vec<String>,
+        content: Arc<Content>,
         backtracking_enabled: bool,
         sudden_death_enabled: bool,
         backspace_enabled: bool,
-        lines: Vec<DisplayLine>,
         ascii: bool,
         source: String,
     ) -> Self {
+        let text = content.as_str();
+        let words: Vec<TestWord> = content
+            .word_ranges
+            .iter()
+            .map(|r| {
+                let word_text = &text[r.start as usize..r.end as usize];
+                TestWord {
+                    range: r.clone(),
+                    target: target_text(word_text, ascii),
+                    progress: String::new(),
+                    events: Vec::new(),
+                }
+            })
+            .collect();
+
         let mut test = Self {
-            words: words.into_iter().map(TestWord::from).collect(),
+            content,
+            words,
             current_word: 0,
             session_start_word: 0,
             complete: false,
             backtracking_enabled,
             sudden_death_enabled,
             backspace_enabled,
-            lines,
             ascii,
             start_time: None,
             source,
         };
         test.skip_non_typeable_words();
         test
+    }
+
+    pub fn word_text(&self, idx: usize) -> &str {
+        let r = &self.words[idx].range;
+        &self.content.as_str()[r.start as usize..r.end as usize]
+    }
+
+    pub fn lines(&self) -> &[DisplayLine] {
+        &self.content.lines
     }
 
     /// Resume at `word_index`, synthesizing completed progress for every word
@@ -134,9 +151,8 @@ impl Test {
             return;
         }
         let target_index = word_index.min(self.words.len() - 1);
-        let ascii = self.ascii;
         for word in self.words.iter_mut().take(target_index) {
-            word.progress = target_text(&word.text, ascii);
+            word.progress = word.target.to_string();
         }
         self.current_word = target_index;
         self.session_start_word = target_index;
@@ -179,21 +195,19 @@ impl Test {
             self.start_time = Some(Instant::now());
         }
 
-        let ascii = self.ascii;
         let word = &mut self.words[self.current_word];
-        let target = target_text(&word.text, ascii);
         match key.code {
             KeyCode::Char(' ') | KeyCode::Enter => {
-                if target.chars().nth(word.progress.len()) == Some(' ') {
+                if word.target.chars().nth(word.progress.len()) == Some(' ') {
                     word.progress.push(' ');
                     word.events.push(TestEvent {
                         time: Instant::now(),
                         correct: Some(true),
                         key,
                         target: None,
-                    })
-                } else if !word.progress.is_empty() || target.is_empty() {
-                    let correct = target == word.progress;
+                    });
+                } else if !word.progress.is_empty() || word.target.is_empty() {
+                    let correct = word.progress.as_str() == &*word.target;
                     if self.sudden_death_enabled && !correct {
                         self.reset();
                     } else {
@@ -212,9 +226,10 @@ impl Test {
                 if word.progress.is_empty() && self.backtracking_enabled && self.backspace_enabled {
                     self.last_word();
                 } else if self.backspace_enabled {
+                    let correct = !word.target.starts_with(word.progress.as_str());
                     word.events.push(TestEvent {
                         time: Instant::now(),
-                        correct: Some(!target.starts_with(&word.progress[..])),
+                        correct: Some(correct),
                         key,
                         target: None,
                     });
@@ -240,9 +255,9 @@ impl Test {
                 word.progress.clear();
             }
             KeyCode::Char(c) => {
-                let target_ch = target.chars().nth(word.progress.len());
+                let target_ch = word.target.chars().nth(word.progress.len());
                 word.progress.push(c);
-                let correct = target.starts_with(&word.progress[..]);
+                let correct = word.target.starts_with(word.progress.as_str());
                 if self.sudden_death_enabled && !correct {
                     self.reset();
                 } else {
@@ -252,7 +267,9 @@ impl Test {
                         key,
                         target: target_ch,
                     });
-                    if word.progress == target && self.current_word == self.words.len() - 1 {
+                    if word.progress.as_str() == &*word.target
+                        && self.current_word == self.words.len() - 1
+                    {
                         self.complete = true;
                         self.current_word = 0;
                     }
@@ -293,8 +310,7 @@ impl Test {
             return;
         }
         loop {
-            let t = target_text(&self.words[self.current_word].text, true);
-            if !t.is_empty() {
+            if !self.words[self.current_word].target.is_empty() {
                 break;
             }
             self.next_word();
@@ -306,21 +322,45 @@ impl Test {
 }
 
 #[cfg(test)]
+pub(crate) fn test_content(words: &[&str], lines: Vec<DisplayLine>) -> Arc<Content> {
+    // For a flat word list (no line structure), reuse Content::from_word_list.
+    if lines.is_empty() {
+        return Arc::new(Content::from_word_list(
+            words.iter().copied(),
+            String::new(),
+        ));
+    }
+
+    // Otherwise reconstruct a buffer that matches the requested line layout.
+    let mut buf = String::new();
+    let mut ranges: Vec<Range<u32>> = Vec::new();
+    for (line_idx, dl) in lines.iter().enumerate() {
+        if line_idx > 0 {
+            buf.push('\n');
+        }
+        for i in 0..dl.word_count {
+            if i > 0 {
+                buf.push(' ');
+            }
+            let w = words[dl.word_start + i];
+            let start = buf.len() as u32;
+            buf.push_str(w);
+            let end = buf.len() as u32;
+            ranges.push(start..end);
+        }
+    }
+    Arc::new(Content::from_parts(buf, ranges, lines, String::new()))
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crossterm::event::KeyEventState;
     use std::time::Duration;
 
     fn make_test(words: &[&str], lines: Vec<DisplayLine>, ascii: bool) -> Test {
-        Test::new(
-            words.iter().map(|s| s.to_string()).collect(),
-            true,
-            false,
-            true,
-            lines,
-            ascii,
-            String::new(),
-        )
+        let content = test_content(words, lines);
+        Test::new(content, true, false, true, ascii, String::new())
     }
 
     fn press(c: char) -> KeyEvent {
@@ -356,9 +396,9 @@ mod tests {
             },
         ];
         let test = make_test(&["a", "b", "c", "d"], lines.clone(), false);
-        assert_eq!(test.lines.len(), 2);
-        assert_eq!(test.lines[0].word_start, 0);
-        assert_eq!(test.lines[1].word_start, 2);
+        assert_eq!(test.lines().len(), 2);
+        assert_eq!(test.lines()[0].word_start, 0);
+        assert_eq!(test.lines()[1].word_start, 2);
         assert_eq!(test.words.len(), 4);
     }
 
@@ -386,19 +426,19 @@ mod tests {
         assert_eq!(test.current_word, 0);
         assert!(!test.complete);
         assert!(test.words.iter().all(|w| w.progress.is_empty()));
-        assert_eq!(test.lines.len(), 2);
+        assert_eq!(test.lines().len(), 2);
     }
 
     #[test]
     fn target_text_without_ascii() {
-        assert_eq!(target_text("caf\u{00e9}", false), "caf\u{00e9}");
+        assert_eq!(&*target_text("caf\u{00e9}", false), "caf\u{00e9}");
     }
 
     #[test]
     fn target_text_with_ascii() {
-        assert_eq!(target_text("caf\u{00e9}", true), "caf");
-        assert_eq!(target_text("hello\u{2014}world", true), "helloworld");
-        assert_eq!(target_text("\u{201c}quoted\u{201d}", true), "quoted");
+        assert_eq!(&*target_text("caf\u{00e9}", true), "caf");
+        assert_eq!(&*target_text("hello\u{2014}world", true), "helloworld");
+        assert_eq!(&*target_text("\u{201c}quoted\u{201d}", true), "quoted");
     }
 
     #[test]

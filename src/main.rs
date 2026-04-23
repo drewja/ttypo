@@ -1,4 +1,5 @@
 mod config;
+mod content;
 mod progress;
 mod resume_prompt;
 mod test;
@@ -6,8 +7,9 @@ mod title;
 mod ui;
 
 use config::Config;
+use content::Content;
 use progress::ProgressStore;
-use test::{DisplayLine, Test, results::Results};
+use test::{Test, results::Results};
 
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::{Shell, generate};
@@ -26,6 +28,7 @@ use std::{
     num,
     path::PathBuf,
     str,
+    sync::Arc,
     time::Duration,
 };
 
@@ -103,48 +106,20 @@ enum Command {
 impl Opt {
     /// Generate test contents.
     ///
-    /// Returns `Ok(Some((words, lines)))` on success. `lines` describes the
-    /// original file layout (empty for language/word-list mode). Returns
-    /// `Ok(None)` only in language mode when no matching language file is
-    /// found, and `Err` on I/O failure reading a file or stdin.
-    fn gen_contents(&self) -> io::Result<Option<(Vec<String>, Vec<DisplayLine>)>> {
+    /// Returns `Ok(Some(content))` on success. Returns `Ok(None)` only in
+    /// language mode when no matching language file is found, and `Err` on
+    /// I/O failure reading a file or stdin.
+    fn gen_contents(&self) -> io::Result<Option<Arc<Content>>> {
         match &self.contents {
             Some(path) => {
-                let text = if path.as_os_str() == "-" {
+                let label = source_label(path);
+                if path.as_os_str() == "-" {
                     let mut buf = String::new();
                     std::io::stdin().lock().read_to_string(&mut buf)?;
-                    buf
+                    Ok(Some(Arc::new(Content::from_text(buf, label))))
                 } else {
-                    fs::read_to_string(path)?
-                };
-
-                let mut words = Vec::new();
-                let mut lines = Vec::new();
-
-                for line in text.lines() {
-                    let indent: String = line
-                        .chars()
-                        .take_while(|c| c.is_whitespace())
-                        .collect::<String>()
-                        .replace('\t', "    ");
-
-                    let word_start = words.len();
-                    for token in line.split_whitespace() {
-                        let word: String = token.chars().filter(|c| !c.is_control()).collect();
-                        if !word.is_empty() {
-                            words.push(word);
-                        }
-                    }
-                    let word_count = words.len() - word_start;
-
-                    lines.push(DisplayLine {
-                        indent,
-                        word_start,
-                        word_count,
-                    });
+                    Ok(Some(Arc::new(Content::from_file(path, label)?)))
                 }
-
-                Ok(Some((words, lines)))
             }
             None => {
                 let lang_name = self
@@ -174,15 +149,15 @@ impl Opt {
                     .collect();
                 language.shuffle(&mut rng);
 
-                let mut contents: Vec<_> = language
+                let mut words: Vec<String> = language
                     .into_iter()
                     .cycle()
                     .take(self.words.get())
                     .map(ToOwned::to_owned)
                     .collect();
-                contents.shuffle(&mut rng);
+                words.shuffle(&mut rng);
 
-                Ok(Some((contents, Vec::new())))
+                Ok(Some(Arc::new(Content::from_word_list(words, lang_name))))
             }
         }
     }
@@ -294,8 +269,18 @@ fn save_progress(store: &mut ProgressStore, ctx: &ResumeCtx, word_index: usize) 
             source_label: ctx.source_label.clone(),
         },
     );
-    // Best-effort — do not interrupt typing on I/O error.
+    // Best-effort save; do not interrupt typing on I/O error.
     let _ = store.save();
+}
+
+fn source_label(path: &std::path::Path) -> String {
+    if path.as_os_str() == "-" {
+        "stdin".to_string()
+    } else {
+        path.file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| path.display().to_string())
+    }
 }
 
 fn clear_progress(store: &mut ProgressStore, ctx: &ResumeCtx) {
@@ -387,32 +372,31 @@ fn main() -> io::Result<()> {
 
     // File/stdin mode: read contents BEFORE entering the alt screen so stdin
     // still points at the real TTY/pipe.
-    let mut file_contents: Option<(Vec<String>, Vec<DisplayLine>)> =
-        if let Some(path) = opt.contents.as_ref() {
-            let r = match opt.gen_contents() {
-                Ok(Some(r)) => r,
-                Ok(None) => {
-                    eprintln!("error: couldn't get test contents.");
-                    std::process::exit(1);
-                }
-                Err(e) => {
-                    if path.as_os_str() == "-" {
-                        eprintln!("error: failed to read from stdin: {}", e);
-                    } else {
-                        eprintln!("error: cannot read '{}': {}", path.display(), e);
-                    }
-                    std::process::exit(1);
-                }
-            };
-            if r.0.is_empty() {
-                eprintln!("Error: the provided file or language contains no words to type.");
-                eprintln!("If you specified a file, make sure it isn't empty.");
+    let mut file_contents: Option<Arc<Content>> = if let Some(path) = opt.contents.as_ref() {
+        let content = match opt.gen_contents() {
+            Ok(Some(c)) => c,
+            Ok(None) => {
+                eprintln!("error: couldn't get test contents.");
                 std::process::exit(1);
             }
-            Some(r)
-        } else {
-            None
+            Err(e) => {
+                if path.as_os_str() == "-" {
+                    eprintln!("error: failed to read from stdin: {}", e);
+                } else {
+                    eprintln!("error: cannot read '{}': {}", path.display(), e);
+                }
+                std::process::exit(1);
+            }
         };
+        if content.is_empty() {
+            eprintln!("Error: the provided file or language contains no words to type.");
+            eprintln!("If you specified a file, make sure it isn't empty.");
+            std::process::exit(1);
+        }
+        Some(content)
+    } else {
+        None
+    };
 
     terminal::enable_raw_mode()?;
     execute!(
@@ -454,10 +438,10 @@ fn main() -> io::Result<()> {
             }
         }
 
-        let (contents, lines) = match file_contents.take() {
-            Some(fc) => fc,
+        let content: Arc<Content> = match file_contents.take() {
+            Some(c) => c,
             None => match opt.gen_contents() {
-                Ok(Some(r)) => r,
+                Ok(Some(c)) => c,
                 Ok(None) => {
                     let _ = teardown();
                     eprintln!("Couldn't get test contents.");
@@ -470,42 +454,28 @@ fn main() -> io::Result<()> {
                 }
             },
         };
-        if contents.is_empty() {
+        if content.is_empty() {
             let _ = teardown();
             eprintln!("Error: the provided file or language contains no words to type.");
             std::process::exit(1);
         }
 
-        let source = match &opt.contents {
-            Some(path) if path.as_os_str() == "-" => "stdin".to_string(),
-            Some(path) => path
-                .file_name()
-                .map(|n| n.to_string_lossy().into_owned())
-                .unwrap_or_else(|| path.display().to_string()),
-            None => opt
-                .language
-                .clone()
-                .unwrap_or_else(|| config.default_language.clone()),
-        };
+        let source = content.source_label.clone();
 
-        let saved_contents: Option<(Vec<String>, Vec<DisplayLine>)> = opt
-            .contents
-            .is_some()
-            .then(|| (contents.clone(), lines.clone()));
-        let is_file_mode = saved_contents.is_some();
+        let is_file_mode = opt.contents.is_some();
+        let saved_content: Option<Arc<Content>> = is_file_mode.then(|| Arc::clone(&content));
 
         // Build resume context for real-file mode (excludes stdin) so we can
-        // look up and save per-document progress.
+        // look up and save per-document progress. Hash the already-loaded
+        // bytes so we don't re-read the file.
         let resume_ctx: Option<ResumeCtx> = match &opt.contents {
-            Some(path) if path.as_os_str() != "-" => {
-                progress::hash_file(path).ok().map(|hash| ResumeCtx {
-                    canonical_path: progress::canonicalize(path),
-                    content_hash: hash,
-                    total_words: contents.len(),
-                    source_label: source.clone(),
-                    save_enabled: !opt.no_save,
-                })
-            }
+            Some(path) if path.as_os_str() != "-" => Some(ResumeCtx {
+                canonical_path: progress::canonicalize(path),
+                content_hash: progress::hash_bytes(content.as_bytes()),
+                total_words: content.word_count(),
+                source_label: source.clone(),
+                save_enabled: !opt.no_save,
+            }),
             _ => None,
         };
 
@@ -536,30 +506,31 @@ fn main() -> io::Result<()> {
             }
         }
 
-        let make_test = |contents: Vec<String>, lines: Vec<DisplayLine>, source: String| {
+        let make_test = |content: Arc<Content>, source: String| {
             Test::new(
-                contents,
+                content,
                 !opt.no_backtrack,
                 opt.sudden_death,
                 !opt.no_backspace,
-                lines,
                 opt.ascii,
                 source,
             )
         };
 
-        let restart_contents = || -> (Vec<String>, Vec<DisplayLine>) {
-            saved_contents
+        // Restart picks up the same backing Content via Arc::clone: no
+        // re-read, no re-tokenize, no deep copy of the word list.
+        let restart_content = || -> Option<Arc<Content>> {
+            saved_content
                 .as_ref()
-                .map(|(c, l)| (c.clone(), l.clone()))
-                .unwrap_or_else(|| opt.gen_contents().ok().flatten().unwrap_or_default())
+                .map(Arc::clone)
+                .or_else(|| opt.gen_contents().ok().flatten())
         };
 
         let mut paused_test: Option<(Test, bool)> = None;
         let mut is_original_test = true;
         let mut last_saved_word = initial_word_index;
 
-        let mut initial_test = make_test(contents, lines, source.clone());
+        let mut initial_test = make_test(Arc::clone(&content), source.clone());
         if initial_word_index > 0 {
             initial_test.resume_at(initial_word_index);
         }
@@ -569,8 +540,12 @@ fn main() -> io::Result<()> {
         'session: loop {
             // Poll with timeout so the status bar (timer/WPM) updates live
             if !event::poll(Duration::from_millis(200))? {
-                // Redraw for timer updates
-                state.render_into(&mut terminal, &config)?;
+                // Only redraw on the idle tick if the test has started.
+                // Skipping pre-start and paused ticks avoids O(N) full
+                // re-renders 5× per second on large documents.
+                if matches!(&state, State::Test(t) if t.start_time.is_some()) {
+                    state.render_into(&mut terminal, &config)?;
+                }
                 continue;
             }
             let event = event::read()?;
@@ -644,12 +619,13 @@ fn main() -> io::Result<()> {
                     {
                         match c.to_ascii_lowercase() {
                             'r' => {
-                                let (new_contents, new_lines) = restart_contents();
-                                if new_contents.is_empty() {
+                                let Some(new_content) = restart_content() else {
+                                    continue;
+                                };
+                                if new_content.is_empty() {
                                     continue;
                                 }
-                                state =
-                                    State::Test(make_test(new_contents, new_lines, source.clone()));
+                                state = State::Test(make_test(new_content, source.clone()));
                                 is_original_test = true;
                                 last_saved_word = 0;
                             }
@@ -663,9 +639,12 @@ fn main() -> io::Result<()> {
                                     .flat_map(|(w, _)| std::iter::repeat_n(w.clone(), 5))
                                     .collect();
                                 practice_words.shuffle(&mut rand::rng());
-                                state = State::Test(make_test(
+                                let practice_content = Arc::new(Content::from_word_list(
                                     practice_words,
-                                    Vec::new(),
+                                    "practice".to_string(),
+                                ));
+                                state = State::Test(make_test(
+                                    practice_content,
                                     "practice".to_string(),
                                 ));
                                 is_original_test = false;
@@ -717,13 +696,22 @@ mod tests {
         }
     }
 
+    /// Collect words + lines from the Content produced by `gen_contents`.
+    fn parts(opt: &Opt) -> (Vec<String>, Vec<test::DisplayLine>) {
+        let content = opt.gen_contents().unwrap().unwrap();
+        let words: Vec<String> = (0..content.word_count())
+            .map(|i| content.word(i).to_string())
+            .collect();
+        (words, content.lines.clone())
+    }
+
     #[test]
     fn gen_contents_empty_file_returns_empty_vec() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("empty.txt");
         fs::File::create(&path).unwrap();
 
-        let (contents, lines) = make_opt(path, false).gen_contents().unwrap().unwrap();
+        let (contents, lines) = parts(&make_opt(path, false));
         assert!(contents.is_empty(), "empty file should produce empty vec");
         assert!(lines.is_empty());
     }
@@ -735,7 +723,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         writeln!(f, "hello world rust").unwrap();
 
-        let (contents, lines) = make_opt(path, false).gen_contents().unwrap().unwrap();
+        let (contents, lines) = parts(&make_opt(path, false));
         assert_eq!(contents, vec!["hello", "world", "rust"]);
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].word_start, 0);
@@ -749,7 +737,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         writeln!(f, "hello\u{2014}world \u{201c}quoted\u{201d}").unwrap();
 
-        let (contents, _) = make_opt(path, false).gen_contents().unwrap().unwrap();
+        let (contents, _) = parts(&make_opt(path, false));
         assert_eq!(
             contents,
             vec!["hello\u{2014}world", "\u{201c}quoted\u{201d}"]
@@ -763,7 +751,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         write!(f, "first line\nsecond line\n\nfourth line").unwrap();
 
-        let (contents, lines) = make_opt(path, false).gen_contents().unwrap().unwrap();
+        let (contents, lines) = parts(&make_opt(path, false));
         assert_eq!(
             contents,
             vec!["first", "line", "second", "line", "fourth", "line"]
@@ -783,7 +771,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         write!(f, "hello\n   \n  \t  \nworld").unwrap();
 
-        let (contents, lines) = make_opt(path, false).gen_contents().unwrap().unwrap();
+        let (contents, lines) = parts(&make_opt(path, false));
         assert_eq!(contents, vec!["hello", "world"]);
         // 4 lines total: "hello", whitespace-only, whitespace-only, "world"
         assert_eq!(lines.len(), 4);
@@ -800,7 +788,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         write!(f, "hello \u{2014}\u{2014}\u{2014} world").unwrap();
 
-        let (contents, _) = make_opt(path, false).gen_contents().unwrap().unwrap();
+        let (contents, _) = parts(&make_opt(path, false));
         assert_eq!(contents, vec!["hello", "\u{2014}\u{2014}\u{2014}", "world"]);
     }
 
@@ -811,7 +799,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         write!(f, "it's a \"test\" (100%); done!").unwrap();
 
-        let (contents, _) = make_opt(path, false).gen_contents().unwrap().unwrap();
+        let (contents, _) = parts(&make_opt(path, false));
         assert_eq!(contents, vec!["it's", "a", "\"test\"", "(100%);", "done!"]);
     }
 
@@ -822,7 +810,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         write!(f, "hello\n\tindented\n\t\tdeep").unwrap();
 
-        let (contents, lines) = make_opt(path, false).gen_contents().unwrap().unwrap();
+        let (contents, lines) = parts(&make_opt(path, false));
         assert_eq!(contents, vec!["hello", "indented", "deep"]);
         assert_eq!(lines[0].indent, "");
         assert_eq!(lines[1].indent, "    "); // 1 tab = 4 spaces
@@ -836,7 +824,7 @@ mod tests {
         let mut f = fs::File::create(&path).unwrap();
         write!(f, "hel\x07lo wor\x00ld").unwrap();
 
-        let (contents, _) = make_opt(path, false).gen_contents().unwrap().unwrap();
+        let (contents, _) = parts(&make_opt(path, false));
         assert_eq!(contents, vec!["hello", "world"]);
     }
 }

@@ -175,10 +175,11 @@ fn calc_accuracy(events: &[&super::TestEvent]) -> AccuracyData {
 fn calc_missed_words(test: &Test) -> Vec<(String, usize)> {
     let mut counts: HashMap<String, usize> = HashMap::new();
     let mut order: Vec<String> = Vec::new();
-    for word in &test.words {
+    for (i, word) in test.words.iter().enumerate() {
         if word.events.iter().any(is_missed_word_event) {
-            let count = counts.entry(word.text.clone()).or_insert_with(|| {
-                order.push(word.text.clone());
+            let text = test.word_text(i).to_string();
+            let count = counts.entry(text.clone()).or_insert_with(|| {
+                order.push(text);
                 0
             });
             *count += 1;
@@ -235,15 +236,8 @@ mod tests {
     }
 
     fn make_test(words: &[&str], ascii: bool) -> Test {
-        Test::new(
-            words.iter().map(|s| s.to_string()).collect(),
-            true,
-            false,
-            true,
-            Vec::new(),
-            ascii,
-            String::new(),
-        )
+        let content = crate::test::test_content(words, Vec::new());
+        Test::new(content, true, false, true, ascii, String::new())
     }
 
     #[test]

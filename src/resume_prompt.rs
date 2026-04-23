@@ -1,5 +1,5 @@
 //! Full-screen modal shown at startup when a resumable entry exists for the
-//! input file. Follows the same pattern as `title::run` — blocks until the
+//! input file. Follows the same pattern as `title::run`: blocks until the
 //! user makes a decision.
 
 use crate::config::Config;
