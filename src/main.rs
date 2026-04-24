@@ -485,6 +485,7 @@ fn main() -> io::Result<()> {
             && ctx.save_enabled
             && !opt.restart
             && let Some(entry) = progress_store.lookup(&ctx.canonical_path).cloned()
+            && entry.word_index > 0
         {
             let hash_matches = entry.content_hash == ctx.content_hash;
             let info = resume_prompt::ResumeInfo {
@@ -580,7 +581,13 @@ fn main() -> io::Result<()> {
                             }
                             let mut results = Results::from(&test);
                             results.is_repeat = is_file_mode;
-                            paused_test = Some((test, is_original_test));
+                            // Only the original test is resumable. Pausing a
+                            // practice run drops it, preserving any original
+                            // that's already parked in `paused_test`.
+                            if is_original_test {
+                                paused_test = Some((test, true));
+                            }
+                            results.can_continue = paused_test.is_some();
                             State::Results(results)
                         }
                         State::Results(_) => break 'outer,
@@ -594,12 +601,18 @@ fn main() -> io::Result<()> {
                     if let Event::Key(key) = event {
                         test.handle_key(key);
                         if test.complete {
-                            if is_original_test && let Some(ctx) = resume_ctx.as_ref() {
-                                clear_progress(&mut progress_store, ctx);
+                            if is_original_test {
+                                if let Some(ctx) = resume_ctx.as_ref() {
+                                    clear_progress(&mut progress_store, ctx);
+                                }
+                                // Finishing the original discards any paused
+                                // parent. Finishing a practice run leaves the
+                                // paused original intact so 'c' still works.
+                                paused_test = None;
                             }
                             let mut results = Results::from(&*test);
                             results.is_repeat = is_file_mode;
-                            paused_test = None;
+                            results.can_continue = paused_test.is_some();
                             state = State::Results(results);
                         } else if is_original_test
                             && test.current_word >= last_saved_word + PERIODIC_SAVE_INTERVAL

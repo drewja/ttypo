@@ -64,7 +64,10 @@ pub struct Results {
     pub accuracy: AccuracyData,
     pub missed_words: Vec<(String, usize)>,
     pub is_repeat: bool,
-    pub completed: bool,
+    /// True when there is a paused test waiting to be resumed via 'c'. Set by
+    /// the session loop so a completed practice run can still offer 'c' back
+    /// to the paused original.
+    pub can_continue: bool,
 }
 
 impl From<&Test> for Results {
@@ -100,7 +103,7 @@ impl From<&Test> for Results {
             accuracy: calc_accuracy(&events),
             missed_words: calc_missed_words(test),
             is_repeat: false,
-            completed: test.complete,
+            can_continue: false,
         }
     }
 }

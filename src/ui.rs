@@ -346,7 +346,7 @@ impl ThemedWidget for &results::Results {
             .split(res_chunks[0]);
 
         let mut parts = vec!["'q' quit"];
-        if !self.completed {
+        if self.can_continue {
             parts.push("'c' continue");
         }
         if self.is_repeat {

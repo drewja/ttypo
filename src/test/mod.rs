@@ -77,10 +77,6 @@ pub struct Test {
     pub content: Arc<Content>,
     pub words: Vec<TestWord>,
     pub current_word: usize,
-    /// Index of the first word typed in the current session. Normally 0, but
-    /// set forward by `resume_at` when a saved-progress test is resumed so
-    /// live WPM and results stats only reflect this session's work.
-    pub session_start_word: usize,
     pub complete: bool,
     pub backtracking_enabled: bool,
     pub sudden_death_enabled: bool,
@@ -121,7 +117,6 @@ impl Test {
             content,
             words,
             current_word: 0,
-            session_start_word: 0,
             complete: false,
             backtracking_enabled,
             sudden_death_enabled,
@@ -155,7 +150,6 @@ impl Test {
             word.progress = word.target.to_string();
         }
         self.current_word = target_index;
-        self.session_start_word = target_index;
         self.skip_non_typeable_words();
     }
 
@@ -165,21 +159,32 @@ impl Test {
             .unwrap_or(0.0)
     }
 
+    /// Rolling WPM over the last ~10 keypresses. Uses the 11 most recent
+    /// event timestamps to get up to 10 interval durations, averages them for
+    /// a CPS, then scales to WPM (60 sec / 5 chars per word = *12).
     pub fn live_wpm(&self) -> f64 {
-        let elapsed = self.elapsed_secs();
-        if elapsed < 0.5 {
+        const WINDOW: usize = 10;
+        let mut times: Vec<Instant> = self
+            .words
+            .iter()
+            .flat_map(|w| w.events.iter().map(|e| e.time))
+            .collect();
+        if times.len() < 2 {
             return 0.0;
         }
-        // Count only chars typed this session; resumed prefix words are
-        // pre-filled but weren't typed now.
-        let session_start = self.session_start_word.min(self.current_word);
-        let chars_typed: usize = self.words[session_start..self.current_word]
-            .iter()
-            .map(|w| w.progress.len())
-            .sum::<usize>()
-            + self.words[self.current_word].progress.len();
-        // Standard: 1 word = 5 characters
-        (chars_typed as f64 / 5.0) / (elapsed / 60.0)
+        times.sort_unstable();
+        let start = times.len().saturating_sub(WINDOW + 1);
+        let window = &times[start..];
+        let span = window
+            .last()
+            .unwrap()
+            .duration_since(*window.first().unwrap())
+            .as_secs_f64();
+        if span <= 0.0 {
+            return 0.0;
+        }
+        let intervals = (window.len() - 1) as f64;
+        (intervals / span) * 12.0
     }
 
     pub fn progress(&self) -> (usize, usize) {
@@ -517,7 +522,6 @@ mod tests {
         assert_eq!(test.words[2].progress, "");
         assert_eq!(test.words[3].progress, "");
         assert_eq!(test.current_word, 2);
-        assert_eq!(test.session_start_word, 2);
     }
 
     #[test]
@@ -525,7 +529,6 @@ mod tests {
         let mut test = make_test(&["a", "b", "c"], Vec::new(), false);
         test.resume_at(999);
         assert_eq!(test.current_word, 2);
-        assert_eq!(test.session_start_word, 2);
         assert_eq!(test.words[0].progress, "a");
         assert_eq!(test.words[1].progress, "b");
     }
@@ -535,20 +538,64 @@ mod tests {
         let mut test = make_test(&["a", "b"], Vec::new(), false);
         test.resume_at(0);
         assert_eq!(test.current_word, 0);
-        assert_eq!(test.session_start_word, 0);
         assert!(test.words.iter().all(|w| w.progress.is_empty()));
+    }
+
+    fn push_event_at(word: &mut TestWord, time: Instant) {
+        word.events.push(TestEvent {
+            time,
+            key: KeyEvent {
+                code: KeyCode::Char('x'),
+                modifiers: KeyModifiers::NONE,
+                kind: KeyEventKind::Press,
+                state: crossterm::event::KeyEventState::NONE,
+            },
+            correct: Some(true),
+            target: None,
+        });
+    }
+
+    #[test]
+    fn live_wpm_rolls_over_last_10_keypresses() {
+        // 11 events 100 ms apart → 10 intervals of 0.1 s → cps = 10 → wpm = 120.
+        let mut test = make_test(&["aaaaaaaaaaaaaa"], Vec::new(), false);
+        let base = Instant::now();
+        for i in 0..11 {
+            push_event_at(&mut test.words[0], base + Duration::from_millis(100 * i));
+        }
+        let wpm = test.live_wpm();
+        assert!((wpm - 120.0).abs() < 1e-6, "expected 120 wpm, got {}", wpm);
+    }
+
+    #[test]
+    fn live_wpm_ignores_older_events_outside_window() {
+        // One slow early event, then 11 fast events: the slow one must be
+        // outside the rolling window and have no effect.
+        let mut test = make_test(&["aaaaaaaaaaaaaaa"], Vec::new(), false);
+        let base = Instant::now();
+        push_event_at(&mut test.words[0], base); // ancient event
+        for i in 0..11 {
+            push_event_at(
+                &mut test.words[0],
+                base + Duration::from_secs(60) + Duration::from_millis(100 * i),
+            );
+        }
+        let wpm = test.live_wpm();
+        assert!((wpm - 120.0).abs() < 1e-6, "expected 120 wpm, got {}", wpm);
     }
 
     #[test]
     fn live_wpm_excludes_resumed_prefix() {
-        // Resume past word 0 ("aaaaa"), then type 5 chars of word 1 ("bbbbb")
-        // over 60s → 1 WPM (5 chars / 5 chars-per-word / 1 minute).
+        // Pre-filled resumed words carry no events, so they can't contribute
+        // to the rolling window regardless of their progress strings.
         let mut test = make_test(&["aaaaa", "bbbbb"], Vec::new(), false);
         test.resume_at(1);
         test.words[1].progress = "bbbbb".into();
-        test.start_time = Some(Instant::now() - Duration::from_secs(60));
+        let base = Instant::now();
+        for i in 0..11 {
+            push_event_at(&mut test.words[1], base + Duration::from_millis(100 * i));
+        }
         let wpm = test.live_wpm();
-        // Without the session_start_word fix, this would be 2.0 (10 chars).
-        assert!((wpm - 1.0).abs() < 1e-6, "expected ~1.0 wpm, got {}", wpm);
+        assert!((wpm - 120.0).abs() < 1e-6, "expected 120 wpm, got {}", wpm);
     }
 }
