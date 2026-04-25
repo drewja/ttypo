@@ -1,22 +1,39 @@
-# ttypo
+```
+                                                                            ▄   ▄              
+┏┌────┓                                                                    ▀█▀ ▀█▀ █ █ █▀█ █▀█
+││Esc │                                                                     █▄  █▄ █▄█ █▄█ █▄█ 
+│/────┤                                                                            ▄▄█ █ v0.1.17    
+┗─────┛                  
+┏┌────┓ ┏┌────┓ ┏┌────┓ ┏┌────┓ ┏┌────┓ ┏┌────┓ ┏┌────┐ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏───────────┐┓
+││ `~ │ ││ 1! │ ││ 2@ │ ││ 3# │ ││ 4$ │ ││ 5% │ ││ 6^ │ │ 7& ││ │ 8* ││ │ 9( ││ │ 0) ││ │ -_ ││ │ =+ ││ │ Backspace ││
+│/────┤ │/────┤ │/────┤ │/────┤ │/────┤ │/────┤ │/────│ │────\│ │────\│ │────\│ │────\│ │────\│ │────\│ │───────────\│
+┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗────────────┛
+┏┌────────┓ ┏┌────┓ ┏┌────┓ ┏┌────┓ ┏┌────┓ ┏┌────┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏───────┐┓
+││  Tab   │ ││ Q  │ ││ W  │ ││ E  │ ││ R  │ ││ T  │ │ Y  ││ │ U  ││ │ I  ││ │ O  ││ │ P  ││ │ [{ ││ │ ]} ││ │     \ ││
+│/────────┤ │/────┤ │/────┤ │/────┤ │/────┤ │/────┤ ├────\│ ├────\│ ├────\│ ├────\│ ├────\│ ├────\│ ├────\│ ├───────\│
+┗─────────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗────────┛
+┏┌──────────┓ ┏┌────┓ ┏┌────┓ ┏┌────┓ ┏┌────┓ ┏┌────┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏─────────────┐┓
+││  Caps    │ ││ A  │ ││ S  │ ││ D  │ ││ F  │ ││ G  │ │ H  ││ │ J  ││ │ K  ││ │ L  ││ │ ;: ││ │ '" ││ │ Enter       ││
+│/──────────┤ │/────┤ │/────┤ │/────┤ │/────┤ │/────┤ ├────\│ ├────\│ ├────\│ ├────\│ ├────\│ ├────\│ ├─────────────\│
+┗───────────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗──────────────┛
+┏┌──────────────┓ ┏┌────┓ ┏┌────┓ ┏┌────┓ ┏┌────┓ ┏┌────┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏────┐┓ ┏─────────────────┐┓
+││  Shift       │ ││ Z  │ ││ X  │ ││ C  │ ││ V  │ ││ B  │ │ N  ││ │ M  ││ │ ,< ││ │ .> ││ │ /? ││ │ Shift           ││
+│/──────────────┤ │/────┤ │/────┤ │/────┤ │/────┤ │/────┤ ├────\│ ├────\│ ├────\│ ├────\│ ├────\│ ├─────────────────\│
+┗───────────────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗─────┛ ┗──────────────────┛
+┏┌──────┓ ┏┌──────┓ ┏┌──────┓ ┏┌────────────────────────────────────────────┐┓ ┏──────┐┓ ┏──────┐┓ ┏──────┐┓ ┏──────┐┓ 
+││ Ctrl │ ││  Fn  │ ││ Alt  │ ││                   Space                    ││ │ Alt  ││ │ Fn   ││ │ Menu ││ │ Ctrl ││ 
+│/──────┤ │/──────┤ │/──────┤ │/────────────────────────────────────────────\│ ├──────\│ ├──────\│ ├──────\│ ├──────\│ 
+┗───────┛ ┗───────┛ ┗───────┛ ┗──────────────────────────────────────────────┛ ┗───────┛ ┗───────┛ ┗───────┛ ┗───────┛ 
+```
 
-A terminal-based typing test built with Rust and Ratatui. Originally forked from [max-niederman/ttyper](https://github.com/max-niederman/ttyper).
-
+A touch-type training program.
+Practice, improve, and measure your touch typing skills while reading and learning about anything you like!
+Read a book or other document while simultaniously improving your typing speed and accuracy.
+```bash
+ttypo --ascii The.Great.Gatsby.txt
+```
+Books in the public domain can be found on project [gutenberg](https://www.gutenberg.org)
 <!-- ![Recording](./resources/recording.gif) -->
-
-## features
-
-- **File mode** - passing a file preserves original line breaks, indentation, and empty lines
-- **ASCII mode** (`--ascii`) - skips non-ascii characters during typing, highlighted in yellow
-- **Live status bar** - shows WPM, elapsed time, and word progress while typing
-- **Full-width progress bar** - visual progress indicator below the prompt
-- **Missed words panel** - results screen shows which words had errors
-- **Practice missed words** - press `p` on results to practice missed words
-- **Repeat test** - press `r` on results to repeat the test
-- **Pause/resume** - press `esc` to pause, `c` to continue
-- **Mistake markers on chart** - red dots on the WPM chart show when errors occurred
-- **Theme** - richer default color scheme using RGB values
-- **Stdin support** - pipe text in with `-` (e.g. `man ls | ttypo --ascii -`)
 
 ## installation
 
@@ -24,7 +41,7 @@ A terminal-based typing test built with Rust and Ratatui. Originally forked from
 cargo install ttypo
 ```
 
-## usage
+## cli usage
 
 ```
 ttypo [OPTIONS] [PATH] [COMMAND]
@@ -51,11 +68,8 @@ Options:
 
 | command                                  |                                          test contents |
 | :--------------------------------------- | -----------------------------------------------------: |
-| `ttypo`                                  |                50 of the 200 most common english words |
-| `ttypo -w 100`                           |               100 of the 200 most common English words |
-| `ttypo -w 100 -l english1000`            |              100 of the 1000 most common English words |
-| `ttypo --language-file lang`             |                   50 random words from the file `lang` |
-| `ttypo text.txt`                         |       contents of `text.txt` with original line layout |
+| `ttypo`                                  |                                       interactive menu |
+| `ttypo text.txt`                         |                     practice on contents of `text.txt` |
 | `ttypo --ascii source.rs`                |      type a source file, skipping non-ASCII characters |
 | `man ls \| ttypo --ascii -`              |                  practice typing a man page from stdin |
 
@@ -107,7 +121,8 @@ The following languages are available by default:
 
 Additional languages can be added by creating a file in the config language directory with a word on each line. On Linux, the config directory is `$HOME/.config/ttypo/language`; on macOS it's `$HOME/Library/Application Support/ttypo/language`.
 
-## config
+# Look and Feel
+You can customize the color and/or style of just about any element in this application via the config.
 
 Configuration is specified by `config.toml` in the config directory (e.g. `$HOME/.config/ttypo/config.toml`).
 
@@ -192,13 +207,14 @@ results_chart_y = "6e6e6e;bold"
 results_restart_prompt = "b4b4c8;bold"
 ```
 
-### style format
+### text style format
+`forground-color:background-color;modifiers`
 
-Styles are encoded as a string. Start with the color specification: a single color (foreground), or two colors separated by a colon (foreground and background). Colors can be a terminal color name, a 6-digit hex color code, `none`, or `reset`.
-
-After the colors, optionally specify modifiers separated by semicolons:
+Colors can be a terminal color name, 6-digit hex, or none.
+Modifiers must be separated by semicolons.
 
 `bold`, `crossed_out`, `dim`, `hidden`, `italic`, `rapid_blink`, `slow_blink`, `reversed`, `underlined`
+
 
 Examples:
 
@@ -207,5 +223,4 @@ Examples:
 - `00ff00:000000` -- green text on a black background
 
 ### border types
-
 `plain`, `rounded` (default), `double`, `thick`, `quadrantinside`, `quadrantoutside`
