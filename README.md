@@ -28,7 +28,7 @@
 
 A touch-type training program.
 Practice, improve, and measure your touch typing skills while reading and learning about anything you like!
-Read a book or other document while simultaniously improving your typing speed and accuracy.
+Read a book or other document while simultaneously improving your typing speed and accuracy.
 ```bash
 ttypo --ascii The.Great.Gatsby.txt
 ```
