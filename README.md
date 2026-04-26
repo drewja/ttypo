@@ -27,14 +27,13 @@
 
 ttypo is a touch-type training program.
 Practice, improve, and measure your touch typing skills while reading and learning about anything you like!
-<<<<<<< HEAD
+
 Read a book or other document while simultaneously improving your typing speed and accuracy.
 
 This project is under active development with new features comming soon!
 Please report bugs and/or feature requests to the github issue tracker.
 Pull requests are welcomed and encouraged.
 
->>>>>>> 0bb0ff5 (readme changes)
 ```bash
 ttypo --ascii The.Great.Gatsby.txt
 ```
