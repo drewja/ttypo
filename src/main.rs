@@ -1,5 +1,6 @@
 mod config;
 mod content;
+mod keyboard;
 mod progress;
 mod resume_prompt;
 mod test;

@@ -1,4 +1,5 @@
 use crate::config::{Config, Theme};
+use crate::keyboard::{KeyboardArt, KeyboardState, KeyboardWidget};
 use crate::ui::ThemedWidget;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -11,7 +12,14 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph, Widget},
 };
-use std::{io, num::NonZeroUsize};
+use std::{
+    io,
+    num::NonZeroUsize,
+    time::{Duration, Instant},
+};
+
+const KEYBOARD_GAP: u16 = 2;
+const POLL_IDLE: Duration = Duration::from_secs(3600);
 
 const WORD_PRESETS: [usize; 6] = [10, 25, 50, 100, 200, 500];
 
@@ -19,6 +27,14 @@ const BANNER: &str = " ▄   ▄
 ▀█▀ ▀█▀ █ █ █▀█ █▀█
  █▄  █▄ █▄█ █▄█ █▄█
         ▄▄█ █";
+
+fn banner_with_version() -> Vec<String> {
+    let mut lines: Vec<String> = BANNER.lines().map(str::to_string).collect();
+    if let Some(last) = lines.last_mut() {
+        last.push_str(&format!(" v{}", env!("CARGO_PKG_VERSION")));
+    }
+    lines
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Cursor {
@@ -74,6 +90,7 @@ pub struct Title {
     mode: Mode,
     picker_filter: String,
     picker_cursor: usize,
+    pub kb: KeyboardState,
 }
 
 pub enum Outcome {
@@ -103,6 +120,7 @@ impl Title {
             mode: Mode::Menu,
             picker_filter: String::new(),
             picker_cursor: 0,
+            kb: KeyboardState::new(),
         }
     }
 
@@ -195,7 +213,23 @@ pub fn run(
 ) -> io::Result<Outcome> {
     loop {
         terminal.draw(|f| f.render_widget(config.theme.apply_to(&title), f.area()))?;
+
+        let timeout = title
+            .kb
+            .next_deadline()
+            .map(|d| d.saturating_duration_since(Instant::now()))
+            .unwrap_or(POLL_IDLE);
+        if !event::poll(timeout)? {
+            title.kb.tick();
+            continue;
+        }
         let event = event::read()?;
+
+        if let Event::Key(ke) = &event {
+            if ke.kind == KeyEventKind::Press {
+                title.kb.note_event(ke);
+            }
+        }
 
         if let Event::Key(KeyEvent {
             code: KeyCode::Char('c'),
@@ -247,11 +281,19 @@ pub fn run(
                 KeyCode::Left | KeyCode::Char('h') => match title.cursor {
                     Cursor::Language => title.cycle_language(-1),
                     Cursor::Words => title.prev_word_preset(),
+                    Cursor::SuddenDeath
+                    | Cursor::NoBacktrack
+                    | Cursor::NoBackspace
+                    | Cursor::Ascii => title.toggle_current(),
                     _ => {}
                 },
                 KeyCode::Right | KeyCode::Char('l') => match title.cursor {
                     Cursor::Language => title.cycle_language(1),
                     Cursor::Words => title.next_word_preset(),
+                    Cursor::SuddenDeath
+                    | Cursor::NoBacktrack
+                    | Cursor::NoBackspace
+                    | Cursor::Ascii => title.toggle_current(),
                     _ => {}
                 },
                 KeyCode::Char(' ') => title.toggle_current(),
@@ -304,28 +346,86 @@ pub fn run(
     }
 }
 
+const MENU_MIN_H: u16 = 18;
+
 impl ThemedWidget for &Title {
     fn render(self, area: Rect, buf: &mut Buffer, theme: &Theme) {
         buf.set_style(area, theme.default);
 
         let card_w = 60u16.min(area.width);
-        let card_h = 20u16.min(area.height);
-        let card = Rect {
-            x: area.x + area.width.saturating_sub(card_w) / 2,
-            y: area.y + area.height.saturating_sub(card_h) / 2,
-            width: card_w,
-            height: card_h,
+        let card_h_with_banner = 20u16.min(area.height);
+        let picker_card_h = 15u16.min(area.height);
+
+        let art = KeyboardArt::embedded();
+        let kb_fits_menu =
+            area.width >= art.width && area.height >= art.height + MENU_MIN_H;
+        let kb_fits_picker = area.width >= art.width
+            && area.height >= art.height + KEYBOARD_GAP + picker_card_h;
+
+        let render_kb_at_bottom = |buf: &mut Buffer| -> Rect {
+            let kb_rect = Rect {
+                x: area.x + area.width.saturating_sub(art.width) / 2,
+                y: area.y + area.height - art.height,
+                width: art.width,
+                height: art.height,
+            };
+            KeyboardWidget::new(&self.kb).render(kb_rect, buf, theme);
+            kb_rect
         };
 
         match self.mode {
-            Mode::Menu => self.render_menu(card, buf, theme),
-            Mode::LanguagePicker => self.render_picker(card, buf, theme),
+            Mode::Menu if kb_fits_menu => {
+                let kb_rect = render_kb_at_bottom(buf);
+                // Menu fills the entire upper area above the keyboard.
+                let menu_rect = Rect {
+                    x: kb_rect.x,
+                    y: area.y,
+                    width: art.width,
+                    height: kb_rect.y - area.y,
+                };
+                self.render_menu(menu_rect, buf, theme, true);
+            }
+            Mode::Menu => {
+                let card = Rect {
+                    x: area.x + area.width.saturating_sub(card_w) / 2,
+                    y: area.y + area.height.saturating_sub(card_h_with_banner) / 2,
+                    width: card_w,
+                    height: card_h_with_banner,
+                };
+                self.render_menu(card, buf, theme, true);
+            }
+            Mode::LanguagePicker if kb_fits_picker => {
+                let kb_rect = render_kb_at_bottom(buf);
+                let upper_h = kb_rect.y - area.y;
+                let card = Rect {
+                    x: area.x + area.width.saturating_sub(card_w) / 2,
+                    y: area.y + upper_h.saturating_sub(picker_card_h) / 2,
+                    width: card_w,
+                    height: picker_card_h,
+                };
+                self.render_picker(card, buf, theme);
+            }
+            Mode::LanguagePicker => {
+                let card = Rect {
+                    x: area.x + area.width.saturating_sub(card_w) / 2,
+                    y: area.y + area.height.saturating_sub(picker_card_h) / 2,
+                    width: card_w,
+                    height: picker_card_h,
+                };
+                self.render_picker(card, buf, theme);
+            }
         }
     }
 }
 
 impl Title {
-    fn render_menu(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
+    fn render_menu(
+        &self,
+        area: Rect,
+        buf: &mut Buffer,
+        theme: &Theme,
+        include_banner: bool,
+    ) {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(theme.border_type)
@@ -335,7 +435,10 @@ impl Title {
         block.render(area, buf);
 
         let sel = |c: Cursor| c == self.cursor;
-        let inner_w = inner.width as usize;
+        // Render lines into a fixed-width column centered inside the card so
+        // the pointer/label positions stay stable regardless of card width.
+        let content_w: u16 = 50u16.min(inner.width);
+        let inner_w = content_w as usize;
         let label_w: usize = 16;
         let pointer_w: usize = 2;
 
@@ -392,18 +495,22 @@ impl Title {
             theme.prompt_untyped
         };
 
-        let banner_w = BANNER.lines().map(|l| l.chars().count()).max().unwrap_or(0);
-        let lines: Vec<Line> = BANNER
-            .lines()
-            .map(|l| {
-                Line::from(Span::styled(
-                    format!("{:<w$}", l, w = banner_w),
-                    theme.title,
-                ))
-                .alignment(Alignment::Center)
-            })
-            .chain([
-                Line::from(""),
+        let mut lines: Vec<Line> = Vec::new();
+        if include_banner {
+            let banner = banner_with_version();
+            let banner_w = banner.iter().map(|l| l.chars().count()).max().unwrap_or(0);
+            for l in &banner {
+                lines.push(
+                    Line::from(Span::styled(
+                        format!("{:<w$}", l, w = banner_w),
+                        theme.title,
+                    ))
+                    .alignment(Alignment::Center),
+                );
+            }
+            lines.push(Line::from(""));
+        }
+        lines.extend([
                 setting_row(
                     Cursor::Language,
                     "Language",
@@ -445,10 +552,18 @@ impl Title {
                 Line::from(""),
                 Line::from(Span::styled(self.hint_text(), theme.results_restart_prompt))
                     .alignment(Alignment::Center),
-            ])
-            .collect();
+            ]);
 
-        Paragraph::new(lines).render(inner, buf);
+        // Center the content column horizontally and vertically inside the card.
+        let content_h = lines.len() as u16;
+        let top_pad = inner.height.saturating_sub(content_h) / 2;
+        let para_rect = Rect {
+            x: inner.x + inner.width.saturating_sub(content_w) / 2,
+            y: inner.y + top_pad,
+            width: content_w,
+            height: inner.height - top_pad,
+        };
+        Paragraph::new(lines).render(para_rect, buf);
     }
 
     fn hint_text(&self) -> &'static str {
@@ -456,7 +571,7 @@ impl Title {
             Cursor::Language => "h l cycle   ⏎ browse all   j k navigate",
             Cursor::Words => "h l preset   H L ±1   j k navigate",
             Cursor::SuddenDeath | Cursor::NoBacktrack | Cursor::NoBackspace | Cursor::Ascii => {
-                "space toggle   j k navigate"
+                "h l space toggle   j k navigate"
             }
             Cursor::Start => "⏎ begin test   j k navigate",
             Cursor::Quit => "⏎ exit   j k navigate",
