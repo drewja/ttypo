@@ -225,10 +225,10 @@ pub fn run(
         }
         let event = event::read()?;
 
-        if let Event::Key(ke) = &event {
-            if ke.kind == KeyEventKind::Press {
-                title.kb.note_event(ke);
-            }
+        if let Event::Key(ke) = &event
+            && ke.kind == KeyEventKind::Press
+        {
+            title.kb.note_event(ke);
         }
 
         if let Event::Key(KeyEvent {
@@ -357,10 +357,9 @@ impl ThemedWidget for &Title {
         let picker_card_h = 15u16.min(area.height);
 
         let art = KeyboardArt::embedded();
-        let kb_fits_menu =
-            area.width >= art.width && area.height >= art.height + MENU_MIN_H;
-        let kb_fits_picker = area.width >= art.width
-            && area.height >= art.height + KEYBOARD_GAP + picker_card_h;
+        let kb_fits_menu = area.width >= art.width && area.height >= art.height + MENU_MIN_H;
+        let kb_fits_picker =
+            area.width >= art.width && area.height >= art.height + KEYBOARD_GAP + picker_card_h;
 
         let render_kb_at_bottom = |buf: &mut Buffer| -> Rect {
             let kb_rect = Rect {
@@ -419,13 +418,7 @@ impl ThemedWidget for &Title {
 }
 
 impl Title {
-    fn render_menu(
-        &self,
-        area: Rect,
-        buf: &mut Buffer,
-        theme: &Theme,
-        include_banner: bool,
-    ) {
+    fn render_menu(&self, area: Rect, buf: &mut Buffer, theme: &Theme, include_banner: bool) {
         let block = Block::default()
             .borders(Borders::ALL)
             .border_type(theme.border_type)
@@ -511,48 +504,48 @@ impl Title {
             lines.push(Line::from(""));
         }
         lines.extend([
-                setting_row(
-                    Cursor::Language,
-                    "Language",
-                    Span::styled(self.language.clone(), value_style(Cursor::Language)),
-                ),
-                setting_row(
-                    Cursor::Words,
-                    "Words",
-                    Span::styled(format!("{}", self.words), value_style(Cursor::Words)),
-                ),
-                Line::from(""),
-                setting_row(
-                    Cursor::SuddenDeath,
-                    "Sudden death",
-                    bool_value(Cursor::SuddenDeath, self.sudden_death),
-                ),
-                setting_row(
-                    Cursor::NoBacktrack,
-                    "No backtrack",
-                    bool_value(Cursor::NoBacktrack, self.no_backtrack),
-                ),
-                setting_row(
-                    Cursor::NoBackspace,
-                    "No backspace",
-                    bool_value(Cursor::NoBackspace, self.no_backspace),
-                ),
-                setting_row(
-                    Cursor::Ascii,
-                    "ASCII only",
-                    bool_value(Cursor::Ascii, self.ascii),
-                ),
-                Line::from(""),
-                Line::from(vec![
-                    Span::styled("[ Start ]", start_style),
-                    Span::raw("    "),
-                    Span::styled("[ Quit ]", quit_style),
-                ])
+            setting_row(
+                Cursor::Language,
+                "Language",
+                Span::styled(self.language.clone(), value_style(Cursor::Language)),
+            ),
+            setting_row(
+                Cursor::Words,
+                "Words",
+                Span::styled(format!("{}", self.words), value_style(Cursor::Words)),
+            ),
+            Line::from(""),
+            setting_row(
+                Cursor::SuddenDeath,
+                "Sudden death",
+                bool_value(Cursor::SuddenDeath, self.sudden_death),
+            ),
+            setting_row(
+                Cursor::NoBacktrack,
+                "No backtrack",
+                bool_value(Cursor::NoBacktrack, self.no_backtrack),
+            ),
+            setting_row(
+                Cursor::NoBackspace,
+                "No backspace",
+                bool_value(Cursor::NoBackspace, self.no_backspace),
+            ),
+            setting_row(
+                Cursor::Ascii,
+                "ASCII only",
+                bool_value(Cursor::Ascii, self.ascii),
+            ),
+            Line::from(""),
+            Line::from(vec![
+                Span::styled("[ Start ]", start_style),
+                Span::raw("    "),
+                Span::styled("[ Quit ]", quit_style),
+            ])
+            .alignment(Alignment::Center),
+            Line::from(""),
+            Line::from(Span::styled(self.hint_text(), theme.results_restart_prompt))
                 .alignment(Alignment::Center),
-                Line::from(""),
-                Line::from(Span::styled(self.hint_text(), theme.results_restart_prompt))
-                    .alignment(Alignment::Center),
-            ]);
+        ]);
 
         // Center the content column horizontally and vertically inside the card.
         let content_h = lines.len() as u16;

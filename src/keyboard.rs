@@ -3,11 +3,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::{
-    buffer::Buffer,
-    layout::Rect,
-    style::Modifier,
-};
+use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
 
 use crate::config::Theme;
 use crate::ui::ThemedWidget;
@@ -72,14 +68,14 @@ impl KeyboardArt {
                 if grid[r][c] != TOP_LEFT {
                     continue;
                 }
-                let Some(bottom) = (r + 1..height).find(|&rr| {
-                    c < grid[rr].len() && grid[rr][c] == BOTTOM_LEFT
-                }) else {
+                let Some(bottom) =
+                    (r + 1..height).find(|&rr| c < grid[rr].len() && grid[rr][c] == BOTTOM_LEFT)
+                else {
                     continue;
                 };
                 let bottom_row = &grid[bottom];
-                let Some(right) = (c + 1..bottom_row.len())
-                    .find(|&cc| bottom_row[cc] == BOTTOM_RIGHT)
+                let Some(right) =
+                    (c + 1..bottom_row.len()).find(|&cc| bottom_row[cc] == BOTTOM_RIGHT)
                 else {
                     continue;
                 };
@@ -102,7 +98,11 @@ impl KeyboardArt {
                 let has_right = right >= 1
                     && right - 1 < grid[r].len()
                     && grid[r][right - 1] == TOP_RIGHT_INNER;
-                let label_col = if label.is_empty() { c + 1 } else { c + 1 + start };
+                let label_col = if label.is_empty() {
+                    c + 1
+                } else {
+                    c + 1 + start
+                };
 
                 instances.entry(label).or_default().push(KeyInst {
                     r,
@@ -174,19 +174,44 @@ fn compute_press_cells(state_grid: &[Vec<char>], inst: &KeyInst) -> Vec<PressCel
 
     let mut cells = Vec::new();
     if inst.has_left {
-        cells.push(PressCell { r, c: c + 1, swapped: HBAR, is_label: false });
-        cells.push(PressCell { r: r + 2, c: c + 1, swapped: HBAR, is_label: false });
+        cells.push(PressCell {
+            r,
+            c: c + 1,
+            swapped: HBAR,
+            is_label: false,
+        });
+        cells.push(PressCell {
+            r: r + 2,
+            c: c + 1,
+            swapped: HBAR,
+            is_label: false,
+        });
     }
     if inst.has_right {
-        cells.push(PressCell { r, c: right - 1, swapped: HBAR, is_label: false });
-        cells.push(PressCell { r: r + 2, c: right - 1, swapped: HBAR, is_label: false });
+        cells.push(PressCell {
+            r,
+            c: right - 1,
+            swapped: HBAR,
+            is_label: false,
+        });
+        cells.push(PressCell {
+            r: r + 2,
+            c: right - 1,
+            swapped: HBAR,
+            is_label: false,
+        });
     }
     for i in c..=right {
         let orig = label_row[i];
         let new = pressed_label[i];
         let is_label = new != ' ' && new != VBAR;
         if orig != new || is_label {
-            cells.push(PressCell { r: r + 1, c: i, swapped: new, is_label });
+            cells.push(PressCell {
+                r: r + 1,
+                c: i,
+                swapped: new,
+                is_label,
+            });
         }
     }
     cells
@@ -319,8 +344,12 @@ impl ThemedWidget for KeyboardWidget<'_> {
                 for cell in compute_press_cells(&state_grid, inst) {
                     let x = area.x + cell.c as u16;
                     let y = area.y + cell.r as u16;
-                    let style = if cell.is_label { pressed_style } else { base_style };
-                    buf.set_string(x, y, &cell.swapped.to_string(), style);
+                    let style = if cell.is_label {
+                        pressed_style
+                    } else {
+                        base_style
+                    };
+                    buf.set_string(x, y, cell.swapped.to_string(), style);
                 }
             }
         }
@@ -359,8 +388,14 @@ mod tests {
         assert_eq!(key_to_label(&ke(KeyCode::Esc)).as_deref(), Some("Esc"));
         assert_eq!(key_to_label(&ke(KeyCode::Char('a'))).as_deref(), Some("A"));
         assert_eq!(key_to_label(&ke(KeyCode::Char('!'))).as_deref(), Some("1!"));
-        assert_eq!(key_to_label(&ke(KeyCode::Char(' '))).as_deref(), Some("Space"));
-        assert_eq!(key_to_label(&ke(KeyCode::Char('|'))).as_deref(), Some("\\|"));
+        assert_eq!(
+            key_to_label(&ke(KeyCode::Char(' '))).as_deref(),
+            Some("Space")
+        );
+        assert_eq!(
+            key_to_label(&ke(KeyCode::Char('|'))).as_deref(),
+            Some("\\|")
+        );
     }
 
     #[test]
