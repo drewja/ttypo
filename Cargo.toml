@@ -1,14 +1,14 @@
 [package]
 name = "ttypo"
 description = "Terminal-based typing test."
-version = "0.1.7"
+version = "0.1.8"
 readme = "README.md"
 repository = "https://github.com/drewja/ttypo"
 homepage = "https://github.com/drewja/ttypo"
 license = "MIT"
 authors = ["Andrew Arendt"]
-keywords = ["typing", "terminal", "tui", "practice"]
-categories = ["command-line-utilities"]
+keywords = ["typing", "terminal", "tui", "practice", "touch-type", "training"]
+categories = ["command-line-utilities", "games"]
 edition = "2024"
 
 [dependencies]
