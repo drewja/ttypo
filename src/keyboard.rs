@@ -3,7 +3,7 @@ use std::sync::OnceLock;
 use std::time::{Duration, Instant};
 
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
-use ratatui::{buffer::Buffer, layout::Rect, style::Modifier};
+use ratatui::{buffer::Buffer, layout::Rect};
 
 use crate::config::Theme;
 use crate::ui::ThemedWidget;
@@ -32,6 +32,7 @@ struct KeyInst {
     r: usize,
     c: usize,
     right: usize,
+    bottom: usize,
     has_left: bool,
     has_right: bool,
     label_col: usize,
@@ -108,6 +109,7 @@ impl KeyboardArt {
                     r,
                     c,
                     right,
+                    bottom,
                     has_left,
                     has_right,
                     label_col,
@@ -150,6 +152,14 @@ struct PressCell {
     is_label: bool,
 }
 
+fn corner_cells(inst: &KeyInst) -> [(usize, usize); 4] {
+    let r = inst.r;
+    let c = inst.c;
+    let right = inst.right;
+    let bottom = inst.bottom;
+    [(r, c), (r, right), (bottom, c), (bottom, right)]
+}
+
 fn compute_press_cells(state_grid: &[Vec<char>], inst: &KeyInst) -> Vec<PressCell> {
     let r = inst.r;
     let c = inst.c;
@@ -161,9 +171,7 @@ fn compute_press_cells(state_grid: &[Vec<char>], inst: &KeyInst) -> Vec<PressCel
         pressed_label[c + 1] = ' ';
         pressed_label[right - 1] = ' ';
     } else if inst.has_left {
-        for i in c + 1..right - 1 {
-            pressed_label[i] = label_row[i + 1];
-        }
+        pressed_label[c + 1..right - 1].copy_from_slice(&label_row[c + 2..right]);
         pressed_label[right - 1] = ' ';
     } else if inst.has_right {
         for i in (c + 2..right).rev() {
@@ -220,6 +228,7 @@ fn compute_press_cells(state_grid: &[Vec<char>], inst: &KeyInst) -> Vec<PressCel
 #[derive(Debug, Default, Clone)]
 pub struct KeyboardState {
     pressed: HashMap<String, Instant>,
+    wrong: HashMap<String, Instant>,
 }
 
 impl KeyboardState {
@@ -247,14 +256,68 @@ impl KeyboardState {
         }
     }
 
+    pub fn mark_wrong(&mut self, ev: &KeyEvent) {
+        if let Some(label) = key_to_label(ev) {
+            self.wrong.insert(label, Instant::now() + FLASH_DURATION);
+        }
+    }
+
     pub fn tick(&mut self) {
         let now = Instant::now();
         self.pressed.retain(|_, deadline| *deadline > now);
+        self.wrong.retain(|_, deadline| *deadline > now);
     }
 
     pub fn next_deadline(&self) -> Option<Instant> {
-        self.pressed.values().min().copied()
+        self.pressed
+            .values()
+            .chain(self.wrong.values())
+            .min()
+            .copied()
     }
+
+    pub fn has_active_flashes(&self) -> bool {
+        self.next_deadline().is_some()
+    }
+}
+
+/// Split `area` into a display rect (top) and an optional keyboard rect (bottom).
+/// When the terminal is at least keyboard-width, the display is clamped to
+/// keyboard-width and centered horizontally regardless of `kb_visible`, so
+/// successive screens stay in the same column.
+pub fn split_with_keyboard(area: Rect, kb_visible: bool) -> (Rect, Option<Rect>) {
+    let art = KeyboardArt::embedded();
+    let wide_enough = area.width >= art.width;
+    let (x, width) = if wide_enough {
+        (area.x + (area.width - art.width) / 2, art.width)
+    } else {
+        (area.x, area.width)
+    };
+    let kb_fits = kb_visible && wide_enough && area.height > art.height;
+    if !kb_fits {
+        return (
+            Rect {
+                x,
+                y: area.y,
+                width,
+                height: area.height,
+            },
+            None,
+        );
+    }
+    let kb = Rect {
+        x,
+        y: area.y + area.height - art.height,
+        width: art.width,
+        height: art.height,
+    };
+    let display = Rect {
+        x,
+        y: area.y,
+        width,
+        height: area.height - art.height,
+    };
+    (display, Some(kb))
 }
 
 pub fn key_to_label(ev: &KeyEvent) -> Option<String> {
@@ -331,7 +394,9 @@ impl ThemedWidget for KeyboardWidget<'_> {
             buf.set_string(area.x, area.y + r as u16, &s, base_style);
         }
 
-        let pressed_style = theme.title.add_modifier(Modifier::UNDERLINED);
+        let label_style = theme.prompt_current_correct;
+        let corner_style = theme.prompt_current_correct;
+        let wrong_style = theme.prompt_current_incorrect;
         let now = Instant::now();
         for (label, deadline) in self.state.pressed.iter() {
             if *deadline <= now {
@@ -340,15 +405,23 @@ impl ThemedWidget for KeyboardWidget<'_> {
             let Some(insts) = art.instances.get(label) else {
                 continue;
             };
+            let is_wrong = self.state.wrong.get(label).is_some_and(|d| *d > now);
+            let (corner_s, label_s) = if is_wrong {
+                (wrong_style, wrong_style)
+            } else {
+                (corner_style, label_style)
+            };
             for inst in insts {
+                for (br, bc) in corner_cells(inst) {
+                    let ch = state_grid[br][bc];
+                    let x = area.x + bc as u16;
+                    let y = area.y + br as u16;
+                    buf.set_string(x, y, ch.to_string(), corner_s);
+                }
                 for cell in compute_press_cells(&state_grid, inst) {
                     let x = area.x + cell.c as u16;
                     let y = area.y + cell.r as u16;
-                    let style = if cell.is_label {
-                        pressed_style
-                    } else {
-                        base_style
-                    };
+                    let style = if cell.is_label { label_s } else { base_style };
                     buf.set_string(x, y, cell.swapped.to_string(), style);
                 }
             }

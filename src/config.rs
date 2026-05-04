@@ -72,17 +72,11 @@ pub struct Theme {
 
     // results widget
     #[serde(deserialize_with = "deserialize_style")]
-    pub results_overview: Style,
-    #[serde(deserialize_with = "deserialize_style")]
     pub results_overview_border: Style,
 
     #[serde(deserialize_with = "deserialize_style")]
-    pub results_worst_keys: Style,
-    #[serde(deserialize_with = "deserialize_style")]
     pub results_worst_keys_border: Style,
 
-    #[serde(deserialize_with = "deserialize_style")]
-    pub results_missed_words: Style,
     #[serde(deserialize_with = "deserialize_style")]
     pub results_missed_words_border: Style,
 
@@ -140,19 +134,10 @@ impl Default for Theme {
             status_progress_filled: Style::default().fg(Color::Rgb(100, 200, 100)),
             status_progress_empty: Style::default().fg(Color::Rgb(50, 50, 50)),
 
-            results_overview: Style::default()
-                .fg(Color::Rgb(100, 200, 100))
-                .add_modifier(Modifier::BOLD),
             results_overview_border: Style::default().fg(Color::Rgb(80, 80, 120)),
 
-            results_worst_keys: Style::default()
-                .fg(Color::Rgb(220, 180, 60))
-                .add_modifier(Modifier::BOLD),
             results_worst_keys_border: Style::default().fg(Color::Rgb(80, 80, 120)),
 
-            results_missed_words: Style::default()
-                .fg(Color::Rgb(230, 80, 80))
-                .add_modifier(Modifier::BOLD),
             results_missed_words_border: Style::default().fg(Color::Rgb(80, 80, 120)),
 
             results_chart: Style::default().fg(Color::Rgb(80, 180, 220)),

@@ -1,5 +1,5 @@
 use crate::config::{Config, Theme};
-use crate::keyboard::{KeyboardArt, KeyboardState, KeyboardWidget};
+use crate::keyboard::{KeyboardState, KeyboardWidget, split_with_keyboard};
 use crate::ui::ThemedWidget;
 
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
@@ -18,7 +18,6 @@ use std::{
     time::{Duration, Instant},
 };
 
-const KEYBOARD_GAP: u16 = 2;
 const POLL_IDLE: Duration = Duration::from_secs(3600);
 
 const WORD_PRESETS: [usize; 6] = [10, 25, 50, 100, 200, 500];
@@ -44,20 +43,16 @@ enum Cursor {
     NoBacktrack,
     NoBackspace,
     Ascii,
-    Start,
-    Quit,
 }
 
 impl Cursor {
-    const ORDER: [Cursor; 8] = [
+    const ORDER: [Cursor; 6] = [
         Cursor::Language,
         Cursor::Words,
         Cursor::SuddenDeath,
         Cursor::NoBacktrack,
         Cursor::NoBackspace,
         Cursor::Ascii,
-        Cursor::Start,
-        Cursor::Quit,
     ];
 
     fn next(self) -> Self {
@@ -90,7 +85,6 @@ pub struct Title {
     mode: Mode,
     picker_filter: String,
     picker_cursor: usize,
-    pub kb: KeyboardState,
 }
 
 pub enum Outcome {
@@ -116,11 +110,10 @@ impl Title {
             no_backspace,
             ascii,
             languages,
-            cursor: Cursor::Start,
+            cursor: Cursor::Language,
             mode: Mode::Menu,
             picker_filter: String::new(),
             picker_cursor: 0,
-            kb: KeyboardState::new(),
         }
     }
 
@@ -210,17 +203,24 @@ pub fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     config: &Config,
     mut title: Title,
+    kb: &mut KeyboardState,
+    kb_visible: &mut bool,
 ) -> io::Result<Outcome> {
     loop {
-        terminal.draw(|f| f.render_widget(config.theme.apply_to(&title), f.area()))?;
+        terminal.draw(|f| {
+            let (display, kb_rect) = split_with_keyboard(f.area(), *kb_visible);
+            f.render_widget(config.theme.apply_to(&title), display);
+            if let Some(r) = kb_rect {
+                f.render_widget(config.theme.apply_to(KeyboardWidget::new(kb)), r);
+            }
+        })?;
 
-        let timeout = title
-            .kb
+        let timeout = kb
             .next_deadline()
             .map(|d| d.saturating_duration_since(Instant::now()))
             .unwrap_or(POLL_IDLE);
         if !event::poll(timeout)? {
-            title.kb.tick();
+            kb.tick();
             continue;
         }
         let event = event::read()?;
@@ -228,7 +228,7 @@ pub fn run(
         if let Event::Key(ke) = &event
             && ke.kind == KeyEventKind::Press
         {
-            title.kb.note_event(ke);
+            kb.note_event(ke);
         }
 
         if let Event::Key(KeyEvent {
@@ -239,6 +239,18 @@ pub fn run(
         }) = event
         {
             return Ok(Outcome::Quit);
+        }
+
+        // Toggle keyboard visibility on Ctrl+K (any phase).
+        if let Event::Key(KeyEvent {
+            code: KeyCode::Char('k'),
+            kind: KeyEventKind::Press,
+            modifiers: KeyModifiers::CONTROL,
+            ..
+        }) = event
+        {
+            *kb_visible = !*kb_visible;
+            continue;
         }
 
         let Event::Key(KeyEvent {
@@ -285,7 +297,6 @@ pub fn run(
                     | Cursor::NoBacktrack
                     | Cursor::NoBackspace
                     | Cursor::Ascii => title.toggle_current(),
-                    _ => {}
                 },
                 KeyCode::Right | KeyCode::Char('l') => match title.cursor {
                     Cursor::Language => title.cycle_language(1),
@@ -294,18 +305,11 @@ pub fn run(
                     | Cursor::NoBacktrack
                     | Cursor::NoBackspace
                     | Cursor::Ascii => title.toggle_current(),
-                    _ => {}
                 },
                 KeyCode::Char(' ') => title.toggle_current(),
                 KeyCode::Enter => match title.cursor {
                     Cursor::Language => title.open_picker(),
-                    Cursor::Start => return Ok(Outcome::Start(title)),
-                    Cursor::Quit => return Ok(Outcome::Quit),
-                    Cursor::SuddenDeath
-                    | Cursor::NoBacktrack
-                    | Cursor::NoBackspace
-                    | Cursor::Ascii => title.toggle_current(),
-                    _ => {}
+                    _ => return Ok(Outcome::Start(title)),
                 },
                 _ => {}
             },
@@ -346,70 +350,47 @@ pub fn run(
     }
 }
 
-const MENU_MIN_H: u16 = 18;
-
 impl ThemedWidget for &Title {
     fn render(self, area: Rect, buf: &mut Buffer, theme: &Theme) {
         buf.set_style(area, theme.default);
 
-        let card_w = 60u16.min(area.width);
-        let card_h_with_banner = 20u16.min(area.height);
-        let picker_card_h = 15u16.min(area.height);
-
-        let art = KeyboardArt::embedded();
-        let kb_fits_menu = area.width >= art.width && area.height >= art.height + MENU_MIN_H;
-        let kb_fits_picker =
-            area.width >= art.width && area.height >= art.height + KEYBOARD_GAP + picker_card_h;
-
-        let render_kb_at_bottom = |buf: &mut Buffer| -> Rect {
-            let kb_rect = Rect {
-                x: area.x + area.width.saturating_sub(art.width) / 2,
-                y: area.y + area.height - art.height,
-                width: art.width,
-                height: art.height,
-            };
-            KeyboardWidget::new(&self.kb).render(kb_rect, buf, theme);
-            kb_rect
-        };
-
         match self.mode {
-            Mode::Menu if kb_fits_menu => {
-                let kb_rect = render_kb_at_bottom(buf);
-                // Menu fills the entire upper area above the keyboard.
-                let menu_rect = Rect {
-                    x: kb_rect.x,
-                    y: area.y,
-                    width: art.width,
-                    height: kb_rect.y - area.y,
-                };
-                self.render_menu(menu_rect, buf, theme, true);
-            }
             Mode::Menu => {
-                let card = Rect {
-                    x: area.x + area.width.saturating_sub(card_w) / 2,
-                    y: area.y + area.height.saturating_sub(card_h_with_banner) / 2,
-                    width: card_w,
-                    height: card_h_with_banner,
+                // Reserve the bottom row of the title area for the hint so it
+                // is always visible, centered, and sits just above the
+                // keyboard widget regardless of menu layout.
+                let hint_h: u16 = if area.height >= 2 { 1 } else { 0 };
+                let menu_area = Rect {
+                    x: area.x,
+                    y: area.y,
+                    width: area.width,
+                    height: area.height.saturating_sub(hint_h),
                 };
-                self.render_menu(card, buf, theme, true);
-            }
-            Mode::LanguagePicker if kb_fits_picker => {
-                let kb_rect = render_kb_at_bottom(buf);
-                let upper_h = kb_rect.y - area.y;
-                let card = Rect {
-                    x: area.x + area.width.saturating_sub(card_w) / 2,
-                    y: area.y + upper_h.saturating_sub(picker_card_h) / 2,
-                    width: card_w,
-                    height: picker_card_h,
-                };
-                self.render_picker(card, buf, theme);
+                self.render_menu(menu_area, buf, theme, true);
+                if hint_h > 0 {
+                    let hint_rect = Rect {
+                        x: area.x,
+                        y: area.y + area.height - 1,
+                        width: area.width,
+                        height: 1,
+                    };
+                    let hint = Line::from(Span::styled(
+                        self.hint_text(),
+                        theme.results_restart_prompt,
+                    ))
+                    .alignment(Alignment::Center);
+                    Paragraph::new(vec![hint]).render(hint_rect, buf);
+                }
             }
             Mode::LanguagePicker => {
+                // Picker stays a centered narrow card so the language list reads naturally.
+                let card_w = 60u16.min(area.width);
+                let card_h = 15u16.min(area.height);
                 let card = Rect {
                     x: area.x + area.width.saturating_sub(card_w) / 2,
-                    y: area.y + area.height.saturating_sub(picker_card_h) / 2,
+                    y: area.y + area.height.saturating_sub(card_h) / 2,
                     width: card_w,
-                    height: picker_card_h,
+                    height: card_h,
                 };
                 self.render_picker(card, buf, theme);
             }
@@ -477,33 +458,7 @@ impl Title {
             Span::styled(text, style)
         };
 
-        let start_style = if sel(Cursor::Start) {
-            theme.prompt_current_correct
-        } else {
-            theme.prompt_untyped
-        };
-        let quit_style = if sel(Cursor::Quit) {
-            theme.prompt_current_incorrect
-        } else {
-            theme.prompt_untyped
-        };
-
-        let mut lines: Vec<Line> = Vec::new();
-        if include_banner {
-            let banner = banner_with_version();
-            let banner_w = banner.iter().map(|l| l.chars().count()).max().unwrap_or(0);
-            for l in &banner {
-                lines.push(
-                    Line::from(Span::styled(
-                        format!("{:<w$}", l, w = banner_w),
-                        theme.title,
-                    ))
-                    .alignment(Alignment::Center),
-                );
-            }
-            lines.push(Line::from(""));
-        }
-        lines.extend([
+        let settings_lines: Vec<Line<'static>> = vec![
             setting_row(
                 Cursor::Language,
                 "Language",
@@ -535,39 +490,95 @@ impl Title {
                 "ASCII only",
                 bool_value(Cursor::Ascii, self.ascii),
             ),
-            Line::from(""),
-            Line::from(vec![
-                Span::styled("[ Start ]", start_style),
-                Span::raw("    "),
-                Span::styled("[ Quit ]", quit_style),
-            ])
-            .alignment(Alignment::Center),
-            Line::from(""),
-            Line::from(Span::styled(self.hint_text(), theme.results_restart_prompt))
-                .alignment(Alignment::Center),
-        ]);
+        ];
+        let settings_h = settings_lines.len() as u16;
 
-        // Center the content column horizontally and vertically inside the card.
-        let content_h = lines.len() as u16;
-        let top_pad = inner.height.saturating_sub(content_h) / 2;
-        let para_rect = Rect {
-            x: inner.x + inner.width.saturating_sub(content_w) / 2,
-            y: inner.y + top_pad,
-            width: content_w,
-            height: inner.height - top_pad,
+        let banner_strs = if include_banner {
+            banner_with_version()
+        } else {
+            Vec::new()
         };
-        Paragraph::new(lines).render(para_rect, buf);
+        let banner_w = banner_strs
+            .iter()
+            .map(|l| l.chars().count())
+            .max()
+            .unwrap_or(0) as u16;
+        let banner_h = banner_strs.len() as u16;
+
+        // Layout choice: stacked banner+settings if it all fits vertically;
+        // otherwise side-by-side when the inner is wide enough; otherwise
+        // settings only so nothing overflows the card.
+        const COL_GAP: u16 = 4;
+        let stacked_h = if banner_h > 0 {
+            banner_h + 1 + settings_h
+        } else {
+            settings_h
+        };
+        let side_w = banner_w + COL_GAP + content_w;
+        let side_h = banner_h.max(settings_h);
+
+        if banner_h > 0 && inner.height >= stacked_h {
+            let mut lines: Vec<Line> = Vec::with_capacity(banner_strs.len() + 1 + settings_lines.len());
+            for l in &banner_strs {
+                lines.push(
+                    Line::from(Span::styled(
+                        format!("{:<w$}", l, w = banner_w as usize),
+                        theme.title,
+                    ))
+                    .alignment(Alignment::Center),
+                );
+            }
+            lines.push(Line::from(""));
+            lines.extend(settings_lines);
+            let content_h = lines.len() as u16;
+            let top_pad = inner.height.saturating_sub(content_h) / 2;
+            let rect = Rect {
+                x: inner.x + inner.width.saturating_sub(content_w) / 2,
+                y: inner.y + top_pad,
+                width: content_w,
+                height: inner.height.saturating_sub(top_pad),
+            };
+            Paragraph::new(lines).render(rect, buf);
+        } else if banner_h > 0 && inner.width >= side_w && inner.height >= side_h {
+            let group_x = inner.x + inner.width.saturating_sub(side_w) / 2;
+            let banner_lines: Vec<Line> = banner_strs
+                .iter()
+                .map(|l| Line::from(Span::styled(l.clone(), theme.title)))
+                .collect();
+            let banner_rect = Rect {
+                x: group_x,
+                y: inner.y + inner.height.saturating_sub(banner_h) / 2,
+                width: banner_w,
+                height: banner_h,
+            };
+            let settings_top_pad = inner.height.saturating_sub(settings_h) / 2;
+            let settings_rect = Rect {
+                x: group_x + banner_w + COL_GAP,
+                y: inner.y + settings_top_pad,
+                width: content_w,
+                height: inner.height.saturating_sub(settings_top_pad),
+            };
+            Paragraph::new(banner_lines).render(banner_rect, buf);
+            Paragraph::new(settings_lines).render(settings_rect, buf);
+        } else {
+            let top_pad = inner.height.saturating_sub(settings_h) / 2;
+            let rect = Rect {
+                x: inner.x + inner.width.saturating_sub(content_w) / 2,
+                y: inner.y + top_pad,
+                width: content_w,
+                height: inner.height.saturating_sub(top_pad),
+            };
+            Paragraph::new(settings_lines).render(rect, buf);
+        }
     }
 
     fn hint_text(&self) -> &'static str {
         match self.cursor {
             Cursor::Language => "h l cycle   ⏎ browse all   j k navigate",
-            Cursor::Words => "h l preset   H L ±1   j k navigate",
+            Cursor::Words => "h l preset   H L ±1   ⏎ start   j k navigate",
             Cursor::SuddenDeath | Cursor::NoBacktrack | Cursor::NoBackspace | Cursor::Ascii => {
-                "h l space toggle   j k navigate"
+                "h l space toggle   ⏎ start   j k navigate"
             }
-            Cursor::Start => "⏎ begin test   j k navigate",
-            Cursor::Quit => "⏎ exit   j k navigate",
         }
     }
 
@@ -650,8 +661,8 @@ mod tests {
 
     #[test]
     fn cursor_next_prev_wraps() {
-        assert_eq!(Cursor::Language.prev(), Cursor::Quit);
-        assert_eq!(Cursor::Quit.next(), Cursor::Language);
+        assert_eq!(Cursor::Language.prev(), Cursor::Ascii);
+        assert_eq!(Cursor::Ascii.next(), Cursor::Language);
         assert_eq!(Cursor::Language.next(), Cursor::Words);
     }
 

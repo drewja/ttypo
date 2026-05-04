@@ -9,6 +9,7 @@ mod ui;
 
 use config::Config;
 use content::Content;
+use keyboard::{KeyboardState, KeyboardWidget, split_with_keyboard};
 use progress::ProgressStore;
 use test::{Test, results::Results};
 
@@ -30,7 +31,7 @@ use std::{
     path::PathBuf,
     str,
     sync::Arc,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 #[derive(RustEmbed)]
@@ -317,19 +318,27 @@ impl State {
         &self,
         terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
         config: &Config,
+        kb: &KeyboardState,
+        kb_visible: bool,
     ) -> io::Result<()> {
-        match self {
-            State::Test(test) => {
-                terminal.draw(|f: &mut ratatui::Frame| {
-                    f.render_widget(config.theme.apply_to(test), f.area());
-                })?;
+        terminal.draw(|f: &mut ratatui::Frame| {
+            // Hide the keyboard widget on the Results screen, since the static
+            // "last key down" rendering would be misleading. Per-action key
+            // glyphs are drawn inside the Results view itself.
+            let show_kb = kb_visible && !matches!(self, State::Results(_));
+            let (display, kb_rect) = split_with_keyboard(f.area(), show_kb);
+            match self {
+                State::Test(test) => {
+                    f.render_widget(config.theme.apply_to(test), display);
+                }
+                State::Results(results) => {
+                    f.render_widget(config.theme.apply_to(results), display);
+                }
             }
-            State::Results(results) => {
-                terminal.draw(|f: &mut ratatui::Frame| {
-                    f.render_widget(config.theme.apply_to(results), f.area());
-                })?;
+            if let Some(r) = kb_rect {
+                f.render_widget(config.theme.apply_to(KeyboardWidget::new(kb)), r);
             }
-        }
+        })?;
         Ok(())
     }
 }
@@ -410,6 +419,12 @@ fn main() -> io::Result<()> {
 
     let mut progress_store = ProgressStore::load(opt.data_dir());
 
+    // Persistent keyboard state lives across all phases (Title → Test →
+    // Results) so the keyboard widget stays anchored at the bottom of the
+    // screen and Ctrl+K can toggle it from any phase.
+    let mut kb = KeyboardState::new();
+    let mut kb_visible = true;
+
     // Outer "session" loop: re-entered when the user hits 'm' on the results
     // screen to return to the main menu. File mode never re-enters since 'm'
     // is disabled there.
@@ -426,7 +441,7 @@ fn main() -> io::Result<()> {
                 opt.ascii,
                 opt.languages_sorted(),
             );
-            match title::run(&mut terminal, &config, t)? {
+            match title::run(&mut terminal, &config, t, &mut kb, &mut kb_visible)? {
                 title::Outcome::Quit => break 'outer,
                 title::Outcome::Start(t) => {
                     opt.language = Some(t.language);
@@ -538,19 +553,49 @@ fn main() -> io::Result<()> {
         }
         let mut state = State::Test(initial_test);
 
-        state.render_into(&mut terminal, &config)?;
+        state.render_into(&mut terminal, &config, &kb, kb_visible)?;
         'session: loop {
-            // Poll with timeout so the status bar (timer/WPM) updates live
-            if !event::poll(Duration::from_millis(200))? {
-                // Only redraw on the idle tick if the test has started.
-                // Skipping pre-start and paused ticks avoids O(N) full
-                // re-renders 5× per second on large documents.
-                if matches!(&state, State::Test(t) if t.start_time.is_some()) {
-                    state.render_into(&mut terminal, &config)?;
+            // Poll with a timeout that wakes for either the live status
+            // refresh (timer/WPM during an active test) or any pending
+            // keyboard-flash decay, whichever comes first.
+            let test_running = matches!(&state, State::Test(t) if t.start_time.is_some());
+            let mut timeout = if test_running {
+                Duration::from_millis(200)
+            } else {
+                Duration::from_secs(3600)
+            };
+            if let Some(d) = kb.next_deadline() {
+                timeout = timeout.min(d.saturating_duration_since(Instant::now()));
+            }
+            if !event::poll(timeout)? {
+                kb.tick();
+                if test_running || kb.has_active_flashes() {
+                    state.render_into(&mut terminal, &config, &kb, kb_visible)?;
                 }
                 continue;
             }
             let event = event::read()?;
+
+            // Flash any key press on the persistent keyboard before
+            // dispatching to the active screen.
+            if let Event::Key(ke) = &event
+                && ke.kind == KeyEventKind::Press
+            {
+                kb.note_event(ke);
+            }
+
+            // Toggle the keyboard widget on Ctrl+K from any phase.
+            if let Event::Key(KeyEvent {
+                code: KeyCode::Char('k'),
+                kind: KeyEventKind::Press,
+                modifiers: KeyModifiers::CONTROL,
+                ..
+            }) = event
+            {
+                kb_visible = !kb_visible;
+                state.render_into(&mut terminal, &config, &kb, kb_visible)?;
+                continue;
+            }
 
             // handle exit controls
             match event {
@@ -600,7 +645,9 @@ fn main() -> io::Result<()> {
             match state {
                 State::Test(ref mut test) => {
                     if let Event::Key(key) = event {
-                        test.handle_key(key);
+                        if test.handle_key(key) {
+                            kb.mark_wrong(&key);
+                        }
                         if test.complete {
                             if is_original_test {
                                 if let Some(ctx) = resume_ctx.as_ref() {
@@ -677,7 +724,7 @@ fn main() -> io::Result<()> {
                 }
             }
 
-            state.render_into(&mut terminal, &config)?;
+            state.render_into(&mut terminal, &config, &kb, kb_visible)?;
         }
     }
 

@@ -191,15 +191,16 @@ impl Test {
         (self.current_word, self.words.len())
     }
 
-    pub fn handle_key(&mut self, key: KeyEvent) {
+    pub fn handle_key(&mut self, key: KeyEvent) -> bool {
         if key.kind != KeyEventKind::Press {
-            return;
+            return false;
         }
 
         if self.start_time.is_none() {
             self.start_time = Some(Instant::now());
         }
 
+        let mut wrong = false;
         let word = &mut self.words[self.current_word];
         match key.code {
             KeyCode::Char(' ') | KeyCode::Enter => {
@@ -213,6 +214,9 @@ impl Test {
                     });
                 } else if !word.progress.is_empty() || word.target.is_empty() {
                     let correct = word.progress.as_str() == &*word.target;
+                    if !correct {
+                        wrong = true;
+                    }
                     if self.sudden_death_enabled && !correct {
                         self.reset();
                     } else {
@@ -263,6 +267,9 @@ impl Test {
                 let target_ch = word.target.chars().nth(word.progress.len());
                 word.progress.push(c);
                 let correct = word.target.starts_with(word.progress.as_str());
+                if !correct {
+                    wrong = true;
+                }
                 if self.sudden_death_enabled && !correct {
                     self.reset();
                 } else {
@@ -272,7 +279,11 @@ impl Test {
                         key,
                         target: target_ch,
                     });
-                    if word.progress.as_str() == &*word.target
+                    // Complete the last word once it has reached its target
+                    // length, regardless of correctness. Mirrors the implicit
+                    // "commit on space" used for non-last words, which the
+                    // last word can't do because there's no following word.
+                    if word.progress.chars().count() >= word.target.chars().count()
                         && self.current_word == self.words.len() - 1
                     {
                         self.complete = true;
@@ -282,6 +293,7 @@ impl Test {
             }
             _ => {}
         };
+        wrong
     }
 
     fn last_word(&mut self) {
@@ -444,6 +456,32 @@ mod tests {
         assert_eq!(&*target_text("caf\u{00e9}", true), "caf");
         assert_eq!(&*target_text("hello\u{2014}world", true), "helloworld");
         assert_eq!(&*target_text("\u{201c}quoted\u{201d}", true), "quoted");
+    }
+
+    #[test]
+    fn last_word_completes_on_mistype_at_full_length() {
+        let mut test = make_test(&["hi", "world"], Vec::new(), false);
+        for c in "hi".chars() {
+            test.handle_key(press(c));
+        }
+        test.handle_key(press_space());
+        for c in "wxrld".chars() {
+            test.handle_key(press(c));
+        }
+        assert!(test.complete);
+    }
+
+    #[test]
+    fn last_word_does_not_complete_before_full_length() {
+        let mut test = make_test(&["hi", "world"], Vec::new(), false);
+        for c in "hi".chars() {
+            test.handle_key(press(c));
+        }
+        test.handle_key(press_space());
+        for c in "wor".chars() {
+            test.handle_key(press(c));
+        }
+        assert!(!test.complete);
     }
 
     #[test]

@@ -110,7 +110,8 @@ impl ThemedWidget for &Test {
         buf.set_line(chunks[2].x, chunks[2].y, &bar_line, chunks[2].width);
 
         let lines = self.lines();
-        let target_lines: Vec<Line> = if !lines.is_empty() {
+        let is_file_mode = !lines.is_empty();
+        let target_lines: Vec<Line> = if is_file_mode {
             // File mode: scroll first, then build spans only for visible lines.
             let available = chunks[1].height.saturating_sub(2) as usize;
             let current_line_idx = lines
@@ -165,8 +166,20 @@ impl ThemedWidget for &Test {
             }
             vec![Line::from(spans)]
         };
+        let scroll_y: u16 = if is_file_mode {
+            0
+        } else {
+            // Width inside borders + horizontal padding (1 each side).
+            let inner_width = chunks[1].width.saturating_sub(4);
+            let inner_height = chunks[1].height.saturating_sub(2);
+            let current_row =
+                current_wrap_row(&self.words, &self.content, self.current_word, inner_width);
+            current_row.saturating_sub(inner_height / 2)
+        };
+
         let target = Paragraph::new(target_lines)
             .wrap(Wrap { trim: false })
+            .scroll((scroll_y, 0))
             .block(
                 Block::default()
                     .title(Span::styled(self.source.clone(), theme.title))
@@ -177,6 +190,42 @@ impl ThemedWidget for &Test {
             );
         target.render(chunks[1], buf);
     }
+}
+
+fn truncate_with_ellipsis(s: &str, max: usize) -> String {
+    if s.chars().count() <= max {
+        return s.to_string();
+    }
+    if max == 0 {
+        return String::new();
+    }
+    let mut out: String = s.chars().take(max - 1).collect();
+    out.push('…');
+    out
+}
+
+/// Simulate ratatui's word-wrap to find which wrapped row holds `current_word`.
+/// Words separated by single spaces, greedy fit at `width` columns.
+fn current_wrap_row(words: &[TestWord], content: &Content, current_word: usize, width: u16) -> u16 {
+    let width = width.max(1) as usize;
+    let mut row: usize = 0;
+    let mut col: usize = 0;
+    for (i, word) in words.iter().enumerate() {
+        let text = &content.as_str()[word.range.start as usize..word.range.end as usize];
+        let w_len = text.chars().count();
+        if col == 0 {
+            col = w_len;
+        } else if col + 1 + w_len > width {
+            row += 1;
+            col = w_len;
+        } else {
+            col += 1 + w_len;
+        }
+        if i == current_word {
+            return row.min(u16::MAX as usize) as u16;
+        }
+    }
+    row.min(u16::MAX as usize) as u16
 }
 
 /// Append `word`'s spans (styled according to its state relative to
@@ -322,19 +371,85 @@ fn extend_spans_from_parts<'a>(
     }
 }
 
+struct Control {
+    label: char,
+    desc: &'static str,
+    right_style: bool,
+}
+
+fn key_art(label: char, right_style: bool) -> [String; 4] {
+    if right_style {
+        [
+            "┏────┐┓".to_string(),
+            format!("│  {} ││", label),
+            "├────\\│".to_string(),
+            "┗─────┛".to_string(),
+        ]
+    } else {
+        [
+            "┏┌────┓".to_string(),
+            format!("││ {}  │", label),
+            "│/────┤".to_string(),
+            "┗─────┛".to_string(),
+        ]
+    }
+}
+
+/// Draw a row of key glyphs with descriptions, centered in `area`. Returns
+/// `false` if the area is too small so the caller can fall back to text.
+fn render_controls(controls: &[Control], area: Rect, buf: &mut Buffer, theme: &Theme) -> bool {
+    const KEY_W: u16 = 7;
+    const GAP: u16 = 3;
+    if area.height < 4 {
+        return false;
+    }
+    let total_w: u16 = controls
+        .iter()
+        .enumerate()
+        .map(|(i, c)| {
+            let desc_w = c.desc.chars().count() as u16;
+            KEY_W + 1 + desc_w + if i + 1 < controls.len() { GAP } else { 0 }
+        })
+        .sum();
+    if total_w > area.width {
+        return false;
+    }
+    let outline = theme.prompt_untyped;
+    let label_style = theme.title;
+    let desc_style = theme.results_restart_prompt;
+    let mut x = area.x + (area.width - total_w) / 2;
+    for c in controls {
+        let art = key_art(c.label, c.right_style);
+        for (row_off, line_str) in art.iter().enumerate() {
+            let y = area.y + row_off as u16;
+            for (col, ch) in line_str.chars().enumerate() {
+                let style = if ch == c.label { label_style } else { outline };
+                buf.set_string(x + col as u16, y, ch.to_string(), style);
+            }
+        }
+        let desc_x = x + KEY_W + 1;
+        let desc_y = area.y + 1;
+        buf.set_string(desc_x, desc_y, c.desc, desc_style);
+        let desc_w = c.desc.chars().count() as u16;
+        x += KEY_W + 1 + desc_w + GAP;
+    }
+    true
+}
+
 impl ThemedWidget for &results::Results {
     fn render(self, area: Rect, buf: &mut Buffer, theme: &Theme) {
         buf.set_style(area, theme.default);
 
-        // Chunks
+        // Chunks: top region for stats/chart, bottom 5 rows for the control
+        // legend (1 row of breathing space + 4 rows of key art).
         let chunks = Layout::default()
             .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(1)])
+            .constraints([Constraint::Min(1), Constraint::Length(5)])
             .split(area);
         let res_chunks = Layout::default()
             .direction(Direction::Vertical)
             .margin(1) // Graph looks tremendously better with just a little margin
-            .constraints([Constraint::Ratio(1, 3), Constraint::Ratio(2, 3)])
+            .constraints([Constraint::Length(6), Constraint::Min(0)])
             .split(chunks[0]);
         let info_chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -345,42 +460,78 @@ impl ThemedWidget for &results::Results {
             ])
             .split(res_chunks[0]);
 
-        let mut parts = vec!["'q' quit"];
+        let mut controls: Vec<Control> = vec![Control {
+            label: 'Q',
+            desc: "quit",
+            right_style: false,
+        }];
         if self.can_continue {
-            parts.push("'c' continue");
+            controls.push(Control {
+                label: 'C',
+                desc: "continue",
+                right_style: false,
+            });
         }
         if self.is_repeat {
-            parts.push("'r' repeat");
+            controls.push(Control {
+                label: 'R',
+                desc: "repeat",
+                right_style: false,
+            });
         } else {
-            parts.push("'r' new test");
-            parts.push("'m' main menu");
+            controls.push(Control {
+                label: 'R',
+                desc: "new test",
+                right_style: false,
+            });
+            controls.push(Control {
+                label: 'M',
+                desc: "main menu",
+                right_style: true,
+            });
         }
         if !self.missed_words.is_empty() {
-            parts.push("'p' practice missed");
+            controls.push(Control {
+                label: 'P',
+                desc: "practice missed words",
+                right_style: true,
+            });
         }
-        let msg = parts.join(" | ");
-
-        let msg_len = msg.len();
-        let exit = Line::from(Span::styled(msg, theme.results_restart_prompt));
-        let x_offset = chunks[1].width.saturating_sub(msg_len as u16) / 2;
-        buf.set_line(chunks[1].x + x_offset, chunks[1].y, &exit, chunks[1].width);
+        let controls_area = Rect {
+            x: chunks[1].x,
+            y: chunks[1].y + 1,
+            width: chunks[1].width,
+            height: chunks[1].height.saturating_sub(1),
+        };
+        if !render_controls(&controls, controls_area, buf, theme) {
+            // Narrow terminal: fall back to a single-line text legend.
+            let parts: Vec<String> = controls
+                .iter()
+                .map(|c| format!("'{}' {}", c.label.to_ascii_lowercase(), c.desc))
+                .collect();
+            let msg = parts.join(" | ");
+            let msg_len = msg.chars().count() as u16;
+            let exit = Line::from(Span::styled(msg, theme.results_restart_prompt));
+            let bottom_y = chunks[1].y + chunks[1].height - 1;
+            let x_offset = chunks[1].width.saturating_sub(msg_len) / 2;
+            buf.set_line(chunks[1].x + x_offset, bottom_y, &exit, chunks[1].width);
+        }
 
         // Sections
-        let mut overview_text = Text::styled("", theme.results_overview);
-        overview_text.extend([
+        let overview_text = Text::from(vec![
             Line::from(format!(
-                "Adjusted WPM: {:.1}",
+                "{:.1} WPM Adjusted",
                 self.timing.overall_cps * WPM_PER_CPS * f64::from(self.accuracy.overall)
             )),
             Line::from(format!(
-                "Accuracy: {:.1}%",
+                "{:.1}% Accuracy",
                 f64::from(self.accuracy.overall) * 100f64
             )),
             Line::from(format!(
-                "Raw WPM: {:.1}",
+                "{:.1} WPM Raw",
                 self.timing.overall_cps * WPM_PER_CPS
             )),
-            Line::from(format!("Correct Keypresses: {}", self.accuracy.overall)),
+            Line::from(format!("{} Hits", self.accuracy.overall)),
         ]);
         let overview = Paragraph::new(overview_text).block(
             Block::default()
@@ -401,14 +552,24 @@ impl ThemedWidget for &results::Results {
             .collect();
         worst_keys.sort_unstable_by_key(|(_, acc)| *acc);
 
-        let mut worst_text = Text::styled("", theme.results_worst_keys);
-        worst_text.extend(worst_keys.iter().take(5).map(|(c, acc)| {
-            Line::from(format!(
-                "- {} at {:.1}% accuracy",
-                c,
-                f64::from(**acc) * 100.0
-            ))
-        }));
+        let worst_inner_w = info_chunks[1].width.saturating_sub(4) as usize;
+        let worst_inner_h = info_chunks[1].height.saturating_sub(2) as usize;
+        let worst_lines: Vec<Line> = worst_keys
+            .iter()
+            .take(worst_inner_h.min(5))
+            .map(|(c, acc)| {
+                let pct = f64::from(**acc) * 100.0;
+                let line = format!("{} at {:.1}% accuracy", c, pct);
+                // Fall back to "c {pct}%" when the long form overflows.
+                let line = if line.chars().count() > worst_inner_w {
+                    format!("{} {:.1}%", c, pct)
+                } else {
+                    line
+                };
+                Line::from(line)
+            })
+            .collect();
+        let worst_text = Text::from(worst_lines);
         let worst = Paragraph::new(worst_text).block(
             Block::default()
                 .title(Span::styled("Worst Keys", theme.title))
@@ -419,21 +580,22 @@ impl ThemedWidget for &results::Results {
         );
         worst.render(info_chunks[1], buf);
 
-        let mut missed_text = Text::styled("", theme.results_missed_words);
-        if !self.missed_words.is_empty() {
-            missed_text.extend(
-                self.missed_words
-                    .iter()
-                    .take(info_chunks[2].height.saturating_sub(2) as usize)
-                    .map(|(w, count)| {
-                        if *count > 1 {
-                            Line::from(format!("- {} (x{})", w, count))
-                        } else {
-                            Line::from(format!("- {}", w))
-                        }
-                    }),
-            );
-        }
+        let missed_inner_w = info_chunks[2].width.saturating_sub(4) as usize;
+        let missed_inner_h = info_chunks[2].height.saturating_sub(2) as usize;
+        let missed_lines: Vec<Line> = self
+            .missed_words
+            .iter()
+            .take(missed_inner_h)
+            .map(|(w, count)| {
+                let line = if *count > 1 {
+                    format!("{} (x{})", w, count)
+                } else {
+                    w.clone()
+                };
+                Line::from(truncate_with_ellipsis(&line, missed_inner_w))
+            })
+            .collect();
+        let missed_text = Text::from(missed_lines);
         let missed = Paragraph::new(missed_text).block(
             Block::default()
                 .title(Span::styled("Missed Words", theme.title))
