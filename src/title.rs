@@ -374,11 +374,9 @@ impl ThemedWidget for &Title {
                         width: area.width,
                         height: 1,
                     };
-                    let hint = Line::from(Span::styled(
-                        self.hint_text(),
-                        theme.results_restart_prompt,
-                    ))
-                    .alignment(Alignment::Center);
+                    let hint =
+                        Line::from(Span::styled(self.hint_text(), theme.results_restart_prompt))
+                            .alignment(Alignment::Center);
                     Paragraph::new(vec![hint]).render(hint_rect, buf);
                 }
             }
@@ -518,7 +516,8 @@ impl Title {
         let side_h = banner_h.max(settings_h);
 
         if banner_h > 0 && inner.height >= stacked_h {
-            let mut lines: Vec<Line> = Vec::with_capacity(banner_strs.len() + 1 + settings_lines.len());
+            let mut lines: Vec<Line> =
+                Vec::with_capacity(banner_strs.len() + 1 + settings_lines.len());
             for l in &banner_strs {
                 lines.push(
                     Line::from(Span::styled(

@@ -42,4 +42,5 @@ pre-release-hook = ["sh", "-c", "cargo fmt --check && cargo clippy --all-targets
 pre-release-replacements = [
     { file = "README.md", search = "v\\d+\\.\\d+\\.\\d+", replace = "v{{version}}", min = 1, max = 1 },
 ]
+pre-release-commit-message = "release {{version}}"
 
