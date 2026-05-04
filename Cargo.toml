@@ -1,7 +1,7 @@
 [package]
 name = "ttypo"
 description = "Terminal-based typing test."
-version = "0.1.8"
+version = "0.1.18"
 readme = "README.md"
 repository = "https://github.com/drewja/ttypo"
 homepage = "https://github.com/drewja/ttypo"
@@ -34,4 +34,12 @@ features = ["derive"]
 
 [dev-dependencies]
 tempfile = "3.27.0"
+
+[package.metadata.release]
+# Verify formatting, lint cleanliness, and tests before any release runs.
+pre-release-hook = ["sh", "-c", "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test"]
+# Rewrite the version stamped into the README banner during `cargo release`.
+pre-release-replacements = [
+    { file = "README.md", search = "v\\d+\\.\\d+\\.\\d+", replace = "v{{version}}", min = 1, max = 1 },
+]
 
