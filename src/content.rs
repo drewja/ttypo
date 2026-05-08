@@ -32,7 +32,11 @@ pub struct Content {
     backing: Backing,
     pub word_ranges: Vec<Range<u32>>,
     pub lines: Vec<DisplayLine>,
-    pub source_label: String,
+    /// Display label for the source (file path, "stdin", language name, ...).
+    /// Read via [`Content::source_label`]; intentionally not pub so consumers
+    /// like `Test::source` can override it (e.g. "practice" mode) without the
+    /// underlying Content drift confusing things.
+    source_label: String,
 }
 
 impl Content {
@@ -56,7 +60,11 @@ impl Content {
         }
     }
 
-    #[cfg_attr(not(test), allow(dead_code))]
+    pub fn source_label(&self) -> &str {
+        &self.source_label
+    }
+
+    #[cfg(test)]
     pub fn word(&self, idx: usize) -> &str {
         let r = &self.word_ranges[idx];
         &self.as_str()[r.start as usize..r.end as usize]
@@ -75,6 +83,18 @@ impl Content {
     pub fn from_file(path: &Path, source_label: String) -> io::Result<Self> {
         let file = File::open(path)?;
         let len = file.metadata()?.len();
+        // Word ranges use u32 offsets; anything past u32::MAX would silently
+        // wrap when ranges are computed. Reject up front with a clear error.
+        if len > u32::MAX as u64 {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!(
+                    "file is {} bytes; ttypo supports files up to {} bytes (4 GiB)",
+                    len,
+                    u32::MAX,
+                ),
+            ));
+        }
         if len == 0 {
             return Ok(Self {
                 backing: Backing::Owned(String::new()),
@@ -112,23 +132,6 @@ impl Content {
         let (buf, word_ranges, lines) = parse_owned(&text);
         Self {
             backing: Backing::Owned(buf),
-            word_ranges,
-            lines,
-            source_label,
-        }
-    }
-
-    /// Build from pre-computed parts. Caller guarantees that every range in
-    /// `word_ranges` points at a valid UTF-8 substring of `text`.
-    #[cfg(test)]
-    pub(crate) fn from_parts(
-        text: String,
-        word_ranges: Vec<Range<u32>>,
-        lines: Vec<DisplayLine>,
-        source_label: String,
-    ) -> Self {
-        Self {
-            backing: Backing::Owned(text),
             word_ranges,
             lines,
             source_label,

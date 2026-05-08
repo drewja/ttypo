@@ -8,7 +8,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
-use std::io::{self, Read};
+use std::io;
+#[cfg(test)]
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -98,10 +100,10 @@ pub fn hash_bytes(bytes: &[u8]) -> String {
 
 /// Hex-encoded SHA-256 hash of a file's bytes, streamed so we never hold the
 /// whole file in memory at once. The mmap-backed flow prefers `hash_bytes`
-/// over the already-mapped slice; this is kept for callers without bytes in
-/// hand.
-#[cfg_attr(not(test), allow(dead_code))]
-pub fn hash_file(path: &Path) -> io::Result<String> {
+/// over the already-mapped slice; this exists for tests that only have a
+/// path in hand.
+#[cfg(test)]
+fn hash_file(path: &Path) -> io::Result<String> {
     let mut file = fs::File::open(path)?;
     let mut hasher = Sha256::new();
     let mut buf = [0u8; 64 * 1024];

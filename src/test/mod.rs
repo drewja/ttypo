@@ -191,6 +191,13 @@ impl Test {
         (self.current_word, self.words.len())
     }
 
+    /// True if the user has registered any keypress in this test. Used to
+    /// suppress the (empty) results screen when the user aborts before
+    /// typing anything.
+    pub fn has_events(&self) -> bool {
+        self.words.iter().any(|w| !w.events.is_empty())
+    }
+
     pub fn handle_key(&mut self, key: KeyEvent) -> bool {
         if key.kind != KeyEventKind::Press {
             return false;
@@ -339,34 +346,16 @@ impl Test {
 }
 
 #[cfg(test)]
-pub(crate) fn test_content(words: &[&str], lines: Vec<DisplayLine>) -> Arc<Content> {
-    // For a flat word list (no line structure), reuse Content::from_word_list.
-    if lines.is_empty() {
-        return Arc::new(Content::from_word_list(
-            words.iter().copied(),
-            String::new(),
-        ));
-    }
+pub(crate) fn flat_content(words: &[&str]) -> Arc<Content> {
+    Arc::new(Content::from_word_list(words.iter().copied(), String::new()))
+}
 
-    // Otherwise reconstruct a buffer that matches the requested line layout.
-    let mut buf = String::new();
-    let mut ranges: Vec<Range<u32>> = Vec::new();
-    for (line_idx, dl) in lines.iter().enumerate() {
-        if line_idx > 0 {
-            buf.push('\n');
-        }
-        for i in 0..dl.word_count {
-            if i > 0 {
-                buf.push(' ');
-            }
-            let w = words[dl.word_start + i];
-            let start = buf.len() as u32;
-            buf.push_str(w);
-            let end = buf.len() as u32;
-            ranges.push(start..end);
-        }
-    }
-    Arc::new(Content::from_parts(buf, ranges, lines, String::new()))
+/// Layout-aware test content: caller hands in an explicit buffer with `\n`
+/// between lines and ` ` between words; tokenization (ranges + DisplayLines)
+/// is delegated to `Content::from_text` rather than recomputed alongside it.
+#[cfg(test)]
+pub(crate) fn layout_content(buf: &str) -> Arc<Content> {
+    Arc::new(Content::from_text(buf.to_string(), String::new()))
 }
 
 #[cfg(test)]
@@ -376,8 +365,16 @@ mod tests {
     use std::time::Duration;
 
     fn make_test(words: &[&str], lines: Vec<DisplayLine>, ascii: bool) -> Test {
-        let content = test_content(words, lines);
-        Test::new(content, true, false, true, ascii, String::new())
+        debug_assert!(
+            lines.is_empty(),
+            "make_test is for flat word lists; use make_layout_test for layout-aware tests",
+        );
+        let _ = lines;
+        Test::new(flat_content(words), true, false, true, ascii, String::new())
+    }
+
+    fn make_layout_test(buf: &str, ascii: bool) -> Test {
+        Test::new(layout_content(buf), true, false, true, ascii, String::new())
     }
 
     fn press(c: char) -> KeyEvent {
@@ -400,19 +397,7 @@ mod tests {
 
     #[test]
     fn new_preserves_lines() {
-        let lines = vec![
-            DisplayLine {
-                indent: String::new(),
-                word_start: 0,
-                word_count: 2,
-            },
-            DisplayLine {
-                indent: String::new(),
-                word_start: 2,
-                word_count: 2,
-            },
-        ];
-        let test = make_test(&["a", "b", "c", "d"], lines.clone(), false);
+        let test = make_layout_test("a b\nc d", false);
         assert_eq!(test.lines().len(), 2);
         assert_eq!(test.lines()[0].word_start, 0);
         assert_eq!(test.lines()[1].word_start, 2);
@@ -421,19 +406,7 @@ mod tests {
 
     #[test]
     fn reset_preserves_lines() {
-        let lines = vec![
-            DisplayLine {
-                indent: String::new(),
-                word_start: 0,
-                word_count: 1,
-            },
-            DisplayLine {
-                indent: String::new(),
-                word_start: 1,
-                word_count: 2,
-            },
-        ];
-        let mut test = make_test(&["a", "b", "c"], lines, false);
+        let mut test = make_layout_test("a\nb c", false);
         test.words[0].progress = "a".to_string();
         test.current_word = 1;
         test.words[1].progress = "x".to_string();
@@ -448,14 +421,14 @@ mod tests {
 
     #[test]
     fn target_text_without_ascii() {
-        assert_eq!(&*target_text("caf\u{00e9}", false), "caf\u{00e9}");
+        assert_eq!(&*target_text("café", false), "café");
     }
 
     #[test]
     fn target_text_with_ascii() {
-        assert_eq!(&*target_text("caf\u{00e9}", true), "caf");
-        assert_eq!(&*target_text("hello\u{2014}world", true), "helloworld");
-        assert_eq!(&*target_text("\u{201c}quoted\u{201d}", true), "quoted");
+        assert_eq!(&*target_text("café", true), "caf");
+        assert_eq!(&*target_text("hello—world", true), "helloworld");
+        assert_eq!(&*target_text("“quoted”", true), "quoted");
     }
 
     #[test]
@@ -486,7 +459,7 @@ mod tests {
 
     #[test]
     fn ascii_skips_unicode_in_typing() {
-        let mut test = make_test(&["caf\u{00e9}"], Vec::new(), true);
+        let mut test = make_test(&["café"], Vec::new(), true);
         for c in "caf".chars() {
             test.handle_key(press(c));
         }
@@ -495,7 +468,7 @@ mod tests {
 
     #[test]
     fn ascii_space_advances_past_unicode_word() {
-        let mut test = make_test(&["caf\u{00e9}", "ok"], Vec::new(), true);
+        let mut test = make_test(&["café", "ok"], Vec::new(), true);
         for c in "caf".chars() {
             test.handle_key(press(c));
         }
@@ -505,21 +478,21 @@ mod tests {
 
     #[test]
     fn ascii_auto_skips_all_unicode_word() {
-        let test = make_test(&["\u{2014}\u{2014}", "ok"], Vec::new(), true);
+        let test = make_test(&["——", "ok"], Vec::new(), true);
         // entirely non-typeable word is auto-skipped at construction
         assert_eq!(test.current_word, 1);
     }
 
     #[test]
     fn ascii_auto_skips_chain_of_unicode_words() {
-        let test = make_test(&["\u{2014}", "\u{00e9}\u{00e9}", "ok"], Vec::new(), true);
+        let test = make_test(&["—", "éé", "ok"], Vec::new(), true);
         // both non-typeable words skipped at construction
         assert_eq!(test.current_word, 2);
     }
 
     #[test]
     fn ascii_auto_skips_after_space() {
-        let mut test = make_test(&["hi", "\u{2014}", "ok"], Vec::new(), true);
+        let mut test = make_test(&["hi", "—", "ok"], Vec::new(), true);
         for c in "hi".chars() {
             test.handle_key(press(c));
         }
@@ -530,13 +503,13 @@ mod tests {
 
     #[test]
     fn ascii_all_non_typeable_completes() {
-        let test = make_test(&["\u{2014}", "\u{00e9}"], Vec::new(), true);
+        let test = make_test(&["—", "é"], Vec::new(), true);
         assert!(test.complete);
     }
 
     #[test]
     fn without_ascii_unicode_must_be_typed() {
-        let mut test = make_test(&["caf\u{00e9}"], Vec::new(), false);
+        let mut test = make_test(&["café"], Vec::new(), false);
         for c in "caf".chars() {
             test.handle_key(press(c));
         }
@@ -545,7 +518,7 @@ mod tests {
 
     #[test]
     fn without_ascii_no_auto_skip() {
-        let test = make_test(&["\u{2014}", "ok"], Vec::new(), false);
+        let test = make_test(&["—", "ok"], Vec::new(), false);
         // without ascii, no auto-skipping
         assert_eq!(test.current_word, 0);
     }

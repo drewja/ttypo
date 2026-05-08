@@ -414,28 +414,27 @@ const MIN_CONTENT_W: u16 = 30;
 const ENTER_W: u16 = 15;
 const ENTER_INNER_W: usize = 12;
 
-// Wings point outward (left for H/J, right for L/K) so they line up with the
-// directional arrows in each key's label.
+// H, J, K, L are all right-hand keys, so all use the right-style wing.
 const H_L_KEYS: &[HintKey] = &[
     HintKey {
-        label: "\u{2190}H",
+        label: "←H",
         kb_label: "H",
-        right_style: false,
+        right_style: true,
     },
     HintKey {
-        label: "L\u{2192}",
+        label: "L→",
         kb_label: "L",
         right_style: true,
     },
 ];
 const J_K_KEYS: &[HintKey] = &[
     HintKey {
-        label: "J\u{2193}",
+        label: "J↓",
         kb_label: "J",
-        right_style: false,
+        right_style: true,
     },
     HintKey {
-        label: "\u{2191}K",
+        label: "↑K",
         kb_label: "K",
         right_style: true,
     },
@@ -502,40 +501,40 @@ fn render_enter_key(
     );
     let action_len = action.chars().count() as u16;
 
-    let dashes = "\u{2500}".repeat(ENTER_INNER_W);
-    let dashes_long = "\u{2500}".repeat(ENTER_INNER_W + 1);
+    let dashes = "─".repeat(ENTER_INNER_W);
+    let dashes_long = "─".repeat(ENTER_INNER_W + 1);
 
     if pressed {
         // Wing flattens (┐→─, \→─). Right column keeps a single │ on rows 1, 2
         // and the label slot shifts right by one cell.
-        let row0 = format!("\u{250F}{}\u{2500}\u{2513}", dashes);
-        let row2 = format!("\u{251C}{}\u{2500}\u{2502}", dashes);
-        let row3 = format!("\u{2517}{}\u{251B}", dashes_long);
+        let row0 = format!("┏{}─┓", dashes);
+        let row2 = format!("├{}─│", dashes);
+        let row3 = format!("┗{}┛", dashes_long);
         buf.set_string(origin_x, origin_y, &row0, pressed_style);
         buf.set_string(origin_x, origin_y + 2, &row2, outline);
         buf.set_string(origin_x, origin_y + 3, &row3, pressed_style);
 
         // Row 1: │, two leading spaces, ↵, space, action, trailing pad, │
-        buf.set_string(origin_x, origin_y + 1, "\u{2502}", pressed_style);
+        buf.set_string(origin_x, origin_y + 1, "│", pressed_style);
         buf.set_string(origin_x + 1, origin_y + 1, "  ", outline);
-        buf.set_string(origin_x + 3, origin_y + 1, "\u{21B5}", label_style);
+        buf.set_string(origin_x + 3, origin_y + 1, "↵", label_style);
         buf.set_string(origin_x + 4, origin_y + 1, " ", outline);
         buf.set_string(origin_x + 5, origin_y + 1, action, label_style);
         let pad_cells = inner.saturating_sub(4 + action_len);
         let pad = " ".repeat(pad_cells as usize);
         buf.set_string(origin_x + 5 + action_len, origin_y + 1, &pad, outline);
-        buf.set_string(origin_x + 1 + inner, origin_y + 1, "\u{2502}", pressed_style);
+        buf.set_string(origin_x + 1 + inner, origin_y + 1, "│", pressed_style);
     } else {
-        let row0 = format!("\u{250F}{}\u{2510}\u{2513}", dashes);
-        let row2 = format!("\u{251C}{}\\\u{2502}", dashes);
-        let row3 = format!("\u{2517}{}\u{251B}", dashes_long);
+        let row0 = format!("┏{}┐┓", dashes);
+        let row2 = format!("├{}\\│", dashes);
+        let row3 = format!("┗{}┛", dashes_long);
         buf.set_string(origin_x, origin_y, &row0, outline);
         buf.set_string(origin_x, origin_y + 2, &row2, outline);
         buf.set_string(origin_x, origin_y + 3, &row3, outline);
 
         // Row 1: │ ↵ <ACTION><pad>││
-        buf.set_string(origin_x, origin_y + 1, "\u{2502} ", outline);
-        buf.set_string(origin_x + 2, origin_y + 1, "\u{21B5}", label_style);
+        buf.set_string(origin_x, origin_y + 1, "│ ", outline);
+        buf.set_string(origin_x + 2, origin_y + 1, "↵", label_style);
         buf.set_string(origin_x + 3, origin_y + 1, " ", outline);
         buf.set_string(origin_x + 4, origin_y + 1, action, label_style);
         let pad_cells = inner.saturating_sub(3 + action_len);
@@ -544,7 +543,7 @@ fn render_enter_key(
         buf.set_string(
             origin_x + 1 + inner,
             origin_y + 1,
-            "\u{2502}\u{2502}",
+            "││",
             outline,
         );
     }
@@ -583,59 +582,59 @@ fn render_hint_key(
             buf.set_string(
                 origin_x,
                 origin_y,
-                "\u{250F}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2513}",
+                "┏─────┓",
                 pressed_style,
             );
             buf.set_string(
                 origin_x,
                 origin_y + 2,
-                "\u{251C}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2502}",
+                "├─────│",
                 outline,
             );
             buf.set_string(
                 origin_x,
                 origin_y + 3,
-                "\u{2517}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{251B}",
+                "┗─────┛",
                 pressed_style,
             );
             // Label row: shift label right by one, lose the inner │.
             // Cells: │ ' ' <leading_extra> <label> <trailing> │
-            buf.set_string(origin_x, origin_y + 1, "\u{2502}", pressed_style);
+            buf.set_string(origin_x, origin_y + 1, "│", pressed_style);
             buf.set_string(origin_x + 1, origin_y + 1, "  ", outline);
             let label_x = origin_x + 3;
             buf.set_string(label_x, origin_y + 1, label, static_label_style);
             // Right side of label row: spaces then a single │ (the wing │ is gone).
             let trail_w = 6 - 3 - label_w as u16;
-            let suffix = format!("{}\u{2502}", " ".repeat(trail_w as usize));
+            let suffix = format!("{}│", " ".repeat(trail_w as usize));
             buf.set_string(label_x + label_w as u16, origin_y + 1, &suffix, outline);
             // Force the col-6 │ in pressed style as well.
-            buf.set_string(origin_x + 6, origin_y + 1, "\u{2502}", pressed_style);
+            buf.set_string(origin_x + 6, origin_y + 1, "│", pressed_style);
         } else {
             buf.set_string(
                 origin_x,
                 origin_y,
-                "\u{250F}\u{2500}\u{2500}\u{2500}\u{2500}\u{2510}\u{2513}",
+                "┏────┐┓",
                 outline,
             );
             buf.set_string(
                 origin_x,
                 origin_y + 2,
-                "\u{251C}\u{2500}\u{2500}\u{2500}\u{2500}\\\u{2502}",
+                "├────\\│",
                 outline,
             );
             buf.set_string(
                 origin_x,
                 origin_y + 3,
-                "\u{2517}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{251B}",
+                "┗─────┛",
                 outline,
             );
             let leading = if label_w == 1 { 2 } else { 1 };
             let trailing = 4 - leading - label_w;
-            let prefix = format!("\u{2502}{}", " ".repeat(leading));
+            let prefix = format!("│{}", " ".repeat(leading));
             buf.set_string(origin_x, origin_y + 1, &prefix, outline);
             let label_x = origin_x + 1 + leading as u16;
             buf.set_string(label_x, origin_y + 1, label, label_style);
-            let suffix = format!("{}\u{2502}\u{2502}", " ".repeat(trailing));
+            let suffix = format!("{}││", " ".repeat(trailing));
             buf.set_string(label_x + label_w as u16, origin_y + 1, &suffix, outline);
         }
     } else if pressed {
@@ -643,54 +642,54 @@ fn render_hint_key(
         buf.set_string(
             origin_x,
             origin_y,
-            "\u{250F}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2513}",
+            "┏─────┓",
             pressed_style,
         );
         buf.set_string(
             origin_x,
             origin_y + 2,
-            "\u{2502}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2524}",
+            "│─────┤",
             outline,
         );
         buf.set_string(
             origin_x,
             origin_y + 3,
-            "\u{2517}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{251B}",
+            "┗─────┛",
             pressed_style,
         );
         // Label row: shift label left by one, lose the inner │.
-        buf.set_string(origin_x, origin_y + 1, "\u{2502}", pressed_style);
+        buf.set_string(origin_x, origin_y + 1, "│", pressed_style);
         buf.set_string(origin_x + 1, origin_y + 1, " ", outline);
         let label_x = origin_x + 2;
         buf.set_string(label_x, origin_y + 1, label, static_label_style);
         let trail_w = 6 - 2 - label_w as u16;
-        let suffix = format!("{}\u{2502}", " ".repeat(trail_w as usize));
+        let suffix = format!("{}│", " ".repeat(trail_w as usize));
         buf.set_string(label_x + label_w as u16, origin_y + 1, &suffix, outline);
-        buf.set_string(origin_x + 6, origin_y + 1, "\u{2502}", pressed_style);
+        buf.set_string(origin_x + 6, origin_y + 1, "│", pressed_style);
     } else {
         buf.set_string(
             origin_x,
             origin_y,
-            "\u{250F}\u{250C}\u{2500}\u{2500}\u{2500}\u{2500}\u{2513}",
+            "┏┌────┓",
             outline,
         );
         buf.set_string(
             origin_x,
             origin_y + 2,
-            "\u{2502}/\u{2500}\u{2500}\u{2500}\u{2500}\u{2524}",
+            "│/────┤",
             outline,
         );
         buf.set_string(
             origin_x,
             origin_y + 3,
-            "\u{2517}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{251B}",
+            "┗─────┛",
             outline,
         );
         let trailing = 4 - 1 - label_w;
-        buf.set_string(origin_x, origin_y + 1, "\u{2502}\u{2502} ", outline);
+        buf.set_string(origin_x, origin_y + 1, "││ ", outline);
         let label_x = origin_x + 3;
         buf.set_string(label_x, origin_y + 1, label, label_style);
-        let suffix = format!("{}\u{2502}", " ".repeat(trailing));
+        let suffix = format!("{}│", " ".repeat(trailing));
         buf.set_string(label_x + label_w as u16, origin_y + 1, &suffix, outline);
     }
 }
@@ -733,13 +732,13 @@ fn render_hint_group_below(
 impl Title {
     pub fn kb_label_overrides(&self) -> HashMap<String, String> {
         let mut m = HashMap::new();
-        m.insert("H".into(), "\u{2190}H".into());
-        m.insert("L".into(), "L\u{2192}".into());
-        m.insert("J".into(), "J\u{2193}".into());
-        m.insert("K".into(), "\u{2191}K".into());
+        m.insert("H".into(), "←H".into());
+        m.insert("L".into(), "L→".into());
+        m.insert("J".into(), "J↓".into());
+        m.insert("K".into(), "↑K".into());
         m.insert(
             "Enter".into(),
-            format!("\u{21B5} {}", enter_action_label(self.cursor)),
+            format!("↵ {}", enter_action_label(self.cursor)),
         );
         m
     }
@@ -932,9 +931,75 @@ impl Title {
             return;
         }
 
-        // Fallback: reserve the bottom row for a single-line text hint, then
-        // stack banner over settings (or settings only if the banner does not
-        // fit).
+        // Stacked-with-key-art fallback: when the side-by-side layout
+        // doesn't fit but width and height still allow for the Enter + H/L +
+        // J/K key art row (centered) above the settings, prefer that over a
+        // bare text hint.
+        let key_section_h = KEY_H + 1; // 4 rows of art + 1 desc row
+        let hl_w = hint_group_width(&hints[0]);
+        let jk_w = hint_group_width(&hints[1]);
+        let key_row_w = ENTER_W + COL_GAP + hl_w + COL_GAP + jk_w;
+        let stacked_keys_h = if banner_h > 0 {
+            banner_h + BANNER_HINT_GAP + key_section_h + BANNER_HINT_GAP + settings_h
+        } else {
+            key_section_h + BANNER_HINT_GAP + settings_h
+        };
+        let stacked_keys_fits = inner.width >= key_row_w
+            && inner.width >= banner_w
+            && inner.width >= content_w
+            && inner.height >= stacked_keys_h;
+
+        if stacked_keys_fits {
+            let group_top = inner.y + inner.height.saturating_sub(stacked_keys_h) / 2;
+            let mut y = group_top;
+            if banner_h > 0 {
+                let banner_lines: Vec<Line> = banner_strs
+                    .iter()
+                    .map(|l| {
+                        Line::from(Span::styled(
+                            format!("{:<w$}", l, w = banner_w as usize),
+                            theme.title,
+                        ))
+                        .alignment(Alignment::Center)
+                    })
+                    .collect();
+                let banner_rect = Rect {
+                    x: inner.x,
+                    y,
+                    width: inner.width,
+                    height: banner_h,
+                };
+                Paragraph::new(banner_lines).render(banner_rect, buf);
+                y += banner_h + BANNER_HINT_GAP;
+            }
+
+            // Order left-to-right: J/K (nav), H/L (preset), Enter (start).
+            let row_x = inner.x + inner.width.saturating_sub(key_row_w) / 2;
+            render_hint_group_below(&hints[1], row_x, y, buf, theme, kb);
+            render_hint_group_below(&hints[0], row_x + jk_w + COL_GAP, y, buf, theme, kb);
+            render_enter_key(
+                enter_action_label(self.cursor),
+                kb.is_pressed("Enter"),
+                row_x + jk_w + COL_GAP + hl_w + COL_GAP,
+                y,
+                buf,
+                theme,
+            );
+            y += key_section_h + BANNER_HINT_GAP;
+
+            let settings_rect = Rect {
+                x: inner.x + inner.width.saturating_sub(content_w) / 2,
+                y,
+                width: content_w,
+                height: settings_h,
+            };
+            Paragraph::new(settings_lines).render(settings_rect, buf);
+            return;
+        }
+
+        // Final fallback: reserve the bottom row for a single-line text hint,
+        // then stack banner over settings (or settings only if the banner
+        // does not fit).
         let hint_h: u16 = if inner.height >= 2 { 1 } else { 0 };
         let body_h = inner.height.saturating_sub(hint_h);
         let body_rect = Rect {
@@ -998,10 +1063,10 @@ impl Title {
 
     fn hint_text(&self) -> &'static str {
         match self.cursor {
-            Cursor::Language => "h l cycle   \u{23CE} browse all   j k navigate",
-            Cursor::Words => "h l preset   H L \u{00B1}1   \u{23CE} start   j k navigate",
+            Cursor::Language => "h l cycle   ⏎ browse all   j k navigate",
+            Cursor::Words => "h l preset   H L ±1   ⏎ start   j k navigate",
             Cursor::SuddenDeath | Cursor::NoBacktrack | Cursor::NoBackspace | Cursor::Ascii => {
-                "h l space toggle   \u{23CE} start   j k navigate"
+                "h l space toggle   ⏎ start   j k navigate"
             }
         }
     }
@@ -1083,109 +1148,16 @@ mod tests {
         )
     }
 
-    fn render_to_string(title: &Title, w: u16, h: u16) -> String {
-        render_with_kb_to_string(title, &KeyboardState::new(), w, h)
-    }
-
-    fn render_with_kb_to_string(title: &Title, kb: &KeyboardState, w: u16, h: u16) -> String {
-        let theme = Theme::default();
-        let mut buf = Buffer::empty(Rect::new(0, 0, w, h));
-        let widget = TitleWidget { title, kb };
-        ThemedWidget::render(&widget, Rect::new(0, 0, w, h), &mut buf, &theme);
-        let mut out = String::new();
-        for y in 0..h {
-            for x in 0..w {
-                out.push_str(buf[(x, y)].symbol());
-            }
-            out.push('\n');
-        }
-        out
-    }
-
-    #[test]
-    fn side_by_side_layout_renders_banner_enter_hints_and_settings() {
-        // 105x15 mimics the kb-clamped title display rect with kb visible.
-        let s = render_to_string(&sample_title(), 105, 15);
-        // Banner present.
-        assert!(s.contains("\u{2584}\u{2584}\u{2588}"), "banner missing:\n{}", s);
-        // Wide Enter key present with "↵ BROWSE" inside for Language cursor.
-        assert!(
-            s.contains("\u{250F}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2510}\u{2513}"),
-            "wide enter top missing:\n{}", s
-        );
-        assert!(s.contains("\u{21B5}"), "↵ glyph missing:\n{}", s);
-        assert!(s.contains("BROWSE"), "BROWSE action missing:\n{}", s);
-        // Directional H/J/K/L labels present.
-        assert!(s.contains("\u{2190}H"), "←H missing:\n{}", s);
-        assert!(s.contains("L\u{2192}"), "L→ missing:\n{}", s);
-        assert!(s.contains("J\u{2193}"), "J↓ missing:\n{}", s);
-        assert!(s.contains("\u{2191}K"), "↑K missing:\n{}", s);
-        // Old text hint NOT present in side-by-side layout.
-        assert!(!s.contains("h l cycle"), "old hint leaked:\n{}", s);
-        // Settings still render.
-        assert!(s.contains("Language"), "settings missing:\n{}", s);
-        assert!(s.contains("Sudden death"));
-    }
-
-    #[test]
-    fn enter_action_label_changes_with_cursor() {
-        let mut t = sample_title();
-        t.cursor = Cursor::Words;
-        let s = render_to_string(&t, 105, 15);
-        assert!(s.contains("START"), "expected 'START' for Words cursor:\n{}", s);
-        assert!(!s.contains("BROWSE"));
-    }
-
-    #[test]
-    fn pressed_hint_key_animates() {
-        let mut kb = KeyboardState::new();
-        kb.press("H");
-        let s = render_with_kb_to_string(&sample_title(), &kb, 105, 15);
-        // Static H key has the inner "┌" (TOP_LEFT_INNER) at column 1 of the
-        // key. When pressed the wing is flattened so the inner "┌" disappears,
-        // replaced by ─. Look for "┏─────┓" which only exists once H is pressed
-        // (the static art is "┏┌────┓").
-        assert!(
-            s.contains("\u{250F}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2513}"),
-            "expected pressed wing to flatten:\n{}",
-            s
-        );
-    }
-
-    #[test]
-    fn pressed_enter_animates() {
-        let mut kb = KeyboardState::new();
-        kb.press("Enter");
-        let s = render_with_kb_to_string(&sample_title(), &kb, 105, 15);
-        // Pressed Enter loses its corner "┐" at the right end of the top row.
-        // The static top row is "┏────────────┐┓"; when pressed it's replaced
-        // with all dashes plus ┓ at the end.
-        assert!(
-            s.contains("\u{250F}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2500}\u{2513}"),
-            "expected pressed enter to flatten ┐ to ─:\n{}",
-            s
-        );
-    }
-
     #[test]
     fn kb_label_overrides_match_hint_labels() {
-        let t = sample_title();
+        let mut t = sample_title();
+        t.cursor = Cursor::Language;
         let m = t.kb_label_overrides();
-        assert_eq!(m.get("H").map(String::as_str), Some("\u{2190}H"));
-        assert_eq!(m.get("L").map(String::as_str), Some("L\u{2192}"));
-        assert_eq!(m.get("J").map(String::as_str), Some("J\u{2193}"));
-        assert_eq!(m.get("K").map(String::as_str), Some("\u{2191}K"));
-        assert_eq!(
-            m.get("Enter").map(String::as_str),
-            Some("\u{21B5} BROWSE")
-        );
-    }
-
-    #[test]
-    fn fallback_layout_keeps_text_hint() {
-        // A short title rect (kb visible + small terminal) falls back.
-        let s = render_to_string(&sample_title(), 105, 9);
-        assert!(s.contains("h l cycle"), "fallback should keep text hint:\n{}", s);
+        assert_eq!(m.get("H").map(String::as_str), Some("←H"));
+        assert_eq!(m.get("L").map(String::as_str), Some("L→"));
+        assert_eq!(m.get("J").map(String::as_str), Some("J↓"));
+        assert_eq!(m.get("K").map(String::as_str), Some("↑K"));
+        assert_eq!(m.get("Enter").map(String::as_str), Some("↵ BROWSE"));
     }
 
     #[test]

@@ -11,13 +11,13 @@ use crate::ui::ThemedWidget;
 const KEYBOARD_ART: &str = include_str!("../resources/keyboard.txt");
 pub const FLASH_DURATION: Duration = Duration::from_millis(140);
 
-const TOP_LEFT: char = '\u{250F}'; // ┏
-const BOTTOM_LEFT: char = '\u{2517}'; // ┗
-const BOTTOM_RIGHT: char = '\u{251B}'; // ┛
-const TOP_LEFT_INNER: char = '\u{250C}'; // ┌
-const TOP_RIGHT_INNER: char = '\u{2510}'; // ┐
-const VBAR: char = '\u{2502}'; // │
-const HBAR: char = '\u{2500}'; // ─
+const TOP_LEFT: char = '┏';
+const BOTTOM_LEFT: char = '┗';
+const BOTTOM_RIGHT: char = '┛';
+const TOP_LEFT_INNER: char = '┌';
+const TOP_RIGHT_INNER: char = '┐';
+const VBAR: char = '│';
+const HBAR: char = '─';
 
 fn is_single_letter(label: &str) -> Option<char> {
     let mut chars = label.chars();
@@ -539,13 +539,13 @@ mod tests {
     fn apply_state_writes_overrides() {
         let art = KeyboardArt::embedded();
         let mut overrides: HashMap<String, String> = HashMap::new();
-        overrides.insert("H".into(), "\u{2190}H".into());
+        overrides.insert("H".into(), "←H".into());
         let g = art.apply_state(false, false, &overrides);
         let h = &art.instances["H"][0];
         // The override is left-aligned with 1 leading space inside the slot.
         let row = &g[h.r + 1];
         let label: String = row[h.c + 1..h.right].iter().collect();
-        assert!(label.contains('\u{2190}'), "row was: {:?}", label);
+        assert!(label.contains('←'), "row was: {:?}", label);
         assert!(label.contains('H'), "row was: {:?}", label);
     }
 

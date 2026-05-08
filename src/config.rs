@@ -85,12 +85,16 @@ pub struct Theme {
     #[serde(deserialize_with = "deserialize_style")]
     pub results_chart_mistakes: Style,
     #[serde(deserialize_with = "deserialize_style")]
-    pub results_chart_x: Style,
-    #[serde(deserialize_with = "deserialize_style")]
     pub results_chart_y: Style,
 
     #[serde(deserialize_with = "deserialize_style")]
     pub results_restart_prompt: Style,
+
+    // resume prompt
+    #[serde(deserialize_with = "deserialize_style")]
+    pub resume_prompt_warning: Style,
+    #[serde(deserialize_with = "deserialize_style")]
+    pub resume_prompt_emphasis: Style,
 }
 
 impl Default for Theme {
@@ -142,7 +146,6 @@ impl Default for Theme {
 
             results_chart: Style::default().fg(Color::Rgb(80, 180, 220)),
             results_chart_mistakes: Style::default().fg(Color::Rgb(230, 80, 80)),
-            results_chart_x: Style::default().fg(Color::Rgb(110, 110, 110)),
             results_chart_y: Style::default()
                 .fg(Color::Rgb(110, 110, 110))
                 .add_modifier(Modifier::BOLD),
@@ -150,6 +153,11 @@ impl Default for Theme {
             results_restart_prompt: Style::default()
                 .fg(Color::Rgb(180, 180, 200))
                 .add_modifier(Modifier::BOLD),
+
+            resume_prompt_warning: Style::default()
+                .fg(Color::Rgb(230, 180, 80))
+                .add_modifier(Modifier::BOLD),
+            resume_prompt_emphasis: Style::default().add_modifier(Modifier::BOLD),
         }
     }
 }

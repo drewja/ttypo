@@ -10,7 +10,6 @@ use ratatui::{
     Terminal,
     backend::CrosstermBackend,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
-    style::{Color, Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Clear, Paragraph, Widget},
 };
@@ -89,9 +88,7 @@ fn render(info: &ResumeInfo, config: &Config, area: Rect, buf: &mut ratatui::buf
     let title_style = if info.hash_matches {
         config.theme.title
     } else {
-        Style::default()
-            .fg(Color::Rgb(230, 180, 80))
-            .add_modifier(Modifier::BOLD)
+        config.theme.resume_prompt_warning
     };
 
     let position_line = format!(
@@ -103,13 +100,13 @@ fn render(info: &ResumeInfo, config: &Config, area: Rect, buf: &mut ratatui::buf
 
     let last_typed_line = format!("Last typed {}.", format_relative(info.updated_at));
 
+    let emphasis = config.theme.resume_prompt_emphasis;
+    let warning = config.theme.resume_prompt_warning;
+
     let mut lines: Vec<Line> = vec![
         Line::from(""),
-        Line::from(Span::styled(
-            info.source_label.clone(),
-            Style::default().add_modifier(Modifier::BOLD),
-        ))
-        .alignment(Alignment::Center),
+        Line::from(Span::styled(info.source_label.clone(), emphasis))
+            .alignment(Alignment::Center),
         Line::from(""),
     ];
 
@@ -117,7 +114,7 @@ fn render(info: &ResumeInfo, config: &Config, area: Rect, buf: &mut ratatui::buf
         lines.push(
             Line::from(Span::styled(
                 "File has changed since you last typed it.",
-                Style::default().fg(Color::Rgb(230, 180, 80)),
+                warning,
             ))
             .alignment(Alignment::Center),
         );
@@ -130,17 +127,17 @@ fn render(info: &ResumeInfo, config: &Config, area: Rect, buf: &mut ratatui::buf
 
     let prompt_line = if info.hash_matches {
         Line::from(vec![
-            Span::styled("[Y]es", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled("[Y]es", emphasis),
             Span::raw("    "),
-            Span::styled("[N]o", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled("[N]o", emphasis),
         ])
     } else {
         Line::from(vec![
-            Span::styled("[Y]es", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled("[Y]es", emphasis),
             Span::raw("    "),
-            Span::styled("[N]o", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled("[N]o", emphasis),
             Span::raw("    "),
-            Span::styled("[D]iscard", Style::default().add_modifier(Modifier::BOLD)),
+            Span::styled("[D]iscard", emphasis),
         ])
     };
     lines.push(prompt_line.alignment(Alignment::Center));

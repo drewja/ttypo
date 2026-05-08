@@ -239,7 +239,7 @@ mod tests {
     }
 
     fn make_test(words: &[&str], ascii: bool) -> Test {
-        let content = crate::test::test_content(words, Vec::new());
+        let content = crate::test::flat_content(words);
         Test::new(content, true, false, true, ascii, String::new())
     }
 

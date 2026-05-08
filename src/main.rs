@@ -118,6 +118,17 @@ impl Opt {
                 if path.as_os_str() == "-" {
                     let mut buf = String::new();
                     std::io::stdin().lock().read_to_string(&mut buf)?;
+                    // Word ranges are u32; reject oversized stdin up front.
+                    if buf.len() > u32::MAX as usize {
+                        return Err(io::Error::new(
+                            io::ErrorKind::InvalidInput,
+                            format!(
+                                "stdin input is {} bytes; ttypo supports up to {} bytes (4 GiB)",
+                                buf.len(),
+                                u32::MAX,
+                            ),
+                        ));
+                    }
                     Ok(Some(Arc::new(Content::from_text(buf, label))))
                 } else {
                     Ok(Some(Arc::new(Content::from_file(path, label)?)))
@@ -429,7 +440,8 @@ fn main() -> io::Result<()> {
     // screen to return to the main menu. File mode never re-enters since 'm'
     // is disabled there.
     'outer: loop {
-        if opt.contents.is_none() {
+        let is_file_mode = opt.contents.is_some();
+        if !is_file_mode {
             let t = title::Title::new(
                 opt.language
                     .clone()
@@ -476,14 +488,21 @@ fn main() -> io::Result<()> {
             std::process::exit(1);
         }
 
-        let source = content.source_label.clone();
+        let source = content.source_label().to_string();
 
-        let is_file_mode = opt.contents.is_some();
         let saved_content: Option<Arc<Content>> = is_file_mode.then(|| Arc::clone(&content));
 
         // Build resume context for real-file mode (excludes stdin) so we can
         // look up and save per-document progress. Hash the already-loaded
         // bytes so we don't re-read the file.
+        //
+        // Note: when Content::from_file took the control-char fallback path,
+        // `content.as_bytes()` is the sanitized owned buffer rather than the
+        // raw file bytes. That means progress saved before the refactor
+        // (hashed against raw file bytes) will report "hash doesn't match"
+        // exactly once on resume, after which the new sanitized hash takes
+        // over. Acceptable: the worst case is a single false-positive change
+        // warning per legacy file.
         let resume_ctx: Option<ResumeCtx> = match &opt.contents {
             Some(path) if path.as_os_str() != "-" => Some(ResumeCtx {
                 canonical_path: progress::canonicalize(path),
@@ -621,6 +640,17 @@ fn main() -> io::Result<()> {
                 }) => {
                     state = match state {
                         State::Test(test) => {
+                            // Aborting before typing anything: skip the empty
+                            // results screen. In language mode, return to the
+                            // title; in file mode there's no title to return
+                            // to, so quit.
+                            if !test.has_events() {
+                                if is_file_mode {
+                                    break 'outer;
+                                } else {
+                                    break 'session;
+                                }
+                            }
                             if is_original_test && let Some(ctx) = resume_ctx.as_ref() {
                                 save_progress(&mut progress_store, ctx, test.current_word);
                                 last_saved_word = test.current_word;
@@ -796,12 +826,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("unicode.txt");
         let mut f = fs::File::create(&path).unwrap();
-        writeln!(f, "hello\u{2014}world \u{201c}quoted\u{201d}").unwrap();
+        writeln!(f, "hello—world “quoted”").unwrap();
 
         let (contents, _) = parts(&make_opt(path, false));
         assert_eq!(
             contents,
-            vec!["hello\u{2014}world", "\u{201c}quoted\u{201d}"]
+            vec!["hello—world", "“quoted”"]
         );
     }
 
@@ -847,10 +877,10 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("alluni.txt");
         let mut f = fs::File::create(&path).unwrap();
-        write!(f, "hello \u{2014}\u{2014}\u{2014} world").unwrap();
+        write!(f, "hello ——— world").unwrap();
 
         let (contents, _) = parts(&make_opt(path, false));
-        assert_eq!(contents, vec!["hello", "\u{2014}\u{2014}\u{2014}", "world"]);
+        assert_eq!(contents, vec!["hello", "———", "world"]);
     }
 
     #[test]

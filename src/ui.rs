@@ -377,6 +377,10 @@ struct Control {
     right_style: bool,
 }
 
+const KEY_W: u16 = 7;
+const KEY_GAP: u16 = 3;
+const ART_H: u16 = 4;
+
 fn key_art(label: char, right_style: bool) -> [String; 4] {
     if right_style {
         [
@@ -395,43 +399,94 @@ fn key_art(label: char, right_style: bool) -> [String; 4] {
     }
 }
 
-/// Draw a row of key glyphs with descriptions, centered in `area`. Returns
+fn control_item_w(c: &Control) -> u16 {
+    KEY_W + 1 + c.desc.chars().count() as u16
+}
+
+/// Greedy pack controls into rows that each fit within `width`. Returns the
+/// number of controls per row.
+fn pack_control_rows(controls: &[Control], width: u16) -> Vec<usize> {
+    let mut rows: Vec<usize> = Vec::new();
+    let mut row_count: usize = 0;
+    let mut row_w: u16 = 0;
+    for c in controls {
+        let item_w = control_item_w(c);
+        if row_count == 0 {
+            row_w = item_w;
+            row_count = 1;
+        } else if row_w + KEY_GAP + item_w <= width {
+            row_w += KEY_GAP + item_w;
+            row_count += 1;
+        } else {
+            rows.push(row_count);
+            row_count = 1;
+            row_w = item_w;
+        }
+    }
+    if row_count > 0 {
+        rows.push(row_count);
+    }
+    rows
+}
+
+/// Vertical rows of key art needed to render `controls` at `width`. Returns
+/// 0 if even a single tile would overflow (caller should fall back to text).
+fn control_art_rows(controls: &[Control], width: u16) -> u16 {
+    if controls.is_empty() {
+        return 0;
+    }
+    let widest = controls.iter().map(control_item_w).max().unwrap_or(0);
+    if widest > width {
+        return 0;
+    }
+    pack_control_rows(controls, width).len() as u16
+}
+
+/// Draw rows of key glyphs with descriptions, centered in `area`. Returns
 /// `false` if the area is too small so the caller can fall back to text.
 fn render_controls(controls: &[Control], area: Rect, buf: &mut Buffer, theme: &Theme) -> bool {
-    const KEY_W: u16 = 7;
-    const GAP: u16 = 3;
-    if area.height < 4 {
+    if controls.is_empty() {
+        return true;
+    }
+    let widest = controls.iter().map(control_item_w).max().unwrap_or(0);
+    if widest > area.width || area.height < ART_H {
         return false;
     }
-    let total_w: u16 = controls
-        .iter()
-        .enumerate()
-        .map(|(i, c)| {
-            let desc_w = c.desc.chars().count() as u16;
-            KEY_W + 1 + desc_w + if i + 1 < controls.len() { GAP } else { 0 }
-        })
-        .sum();
-    if total_w > area.width {
+    let row_breaks = pack_control_rows(controls, area.width);
+    let n_rows = row_breaks.len() as u16;
+    let needed_h = ART_H * n_rows + n_rows.saturating_sub(1);
+    if needed_h > area.height {
         return false;
     }
     let outline = theme.prompt_untyped;
     let label_style = theme.title;
     let desc_style = theme.results_restart_prompt;
-    let mut x = area.x + (area.width - total_w) / 2;
-    for c in controls {
-        let art = key_art(c.label, c.right_style);
-        for (row_off, line_str) in art.iter().enumerate() {
-            let y = area.y + row_off as u16;
-            for (col, ch) in line_str.chars().enumerate() {
-                let style = if ch == c.label { label_style } else { outline };
-                buf.set_string(x + col as u16, y, ch.to_string(), style);
+
+    let mut idx = 0;
+    let mut y_off: u16 = 0;
+    for &row_n in &row_breaks {
+        let row_slice = &controls[idx..idx + row_n];
+        let row_total_w: u16 = row_slice
+            .iter()
+            .enumerate()
+            .map(|(i, c)| control_item_w(c) + if i + 1 < row_n { KEY_GAP } else { 0 })
+            .sum();
+        let mut x = area.x + area.width.saturating_sub(row_total_w) / 2;
+        let row_y = area.y + y_off;
+        for c in row_slice {
+            let art = key_art(c.label, c.right_style);
+            for (row_off, line_str) in art.iter().enumerate() {
+                let y = row_y + row_off as u16;
+                for (col, ch) in line_str.chars().enumerate() {
+                    let style = if ch == c.label { label_style } else { outline };
+                    buf.set_string(x + col as u16, y, ch.to_string(), style);
+                }
             }
+            buf.set_string(x + KEY_W + 1, row_y + 1, c.desc, desc_style);
+            x += control_item_w(c) + KEY_GAP;
         }
-        let desc_x = x + KEY_W + 1;
-        let desc_y = area.y + 1;
-        buf.set_string(desc_x, desc_y, c.desc, desc_style);
-        let desc_w = c.desc.chars().count() as u16;
-        x += KEY_W + 1 + desc_w + GAP;
+        idx += row_n;
+        y_off += ART_H + 1;
     }
     true
 }
@@ -439,26 +494,6 @@ fn render_controls(controls: &[Control], area: Rect, buf: &mut Buffer, theme: &T
 impl ThemedWidget for &results::Results {
     fn render(self, area: Rect, buf: &mut Buffer, theme: &Theme) {
         buf.set_style(area, theme.default);
-
-        // Chunks: top region for stats/chart, bottom 5 rows for the control
-        // legend (1 row of breathing space + 4 rows of key art).
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([Constraint::Min(1), Constraint::Length(5)])
-            .split(area);
-        let res_chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .margin(1) // Graph looks tremendously better with just a little margin
-            .constraints([Constraint::Length(6), Constraint::Min(0)])
-            .split(chunks[0]);
-        let info_chunks = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Ratio(1, 3),
-                Constraint::Ratio(1, 3),
-                Constraint::Ratio(1, 3),
-            ])
-            .split(res_chunks[0]);
 
         let mut controls: Vec<Control> = vec![Control {
             label: 'Q',
@@ -497,13 +532,35 @@ impl ThemedWidget for &results::Results {
                 right_style: true,
             });
         }
-        let controls_area = Rect {
-            x: chunks[1].x,
-            y: chunks[1].y + 1,
-            width: chunks[1].width,
-            height: chunks[1].height.saturating_sub(1),
+
+        // Size the bottom band to fit however many rows of key art the width
+        // demands. The chart container's .margin(1) above already provides
+        // the breathing row between chart and key hints.
+        let art_rows = control_art_rows(&controls, area.width);
+        let bottom_h: u16 = if art_rows > 0 {
+            ART_H * art_rows + art_rows.saturating_sub(1)
+        } else {
+            1
         };
-        if !render_controls(&controls, controls_area, buf, theme) {
+
+        let chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Min(1), Constraint::Length(bottom_h)])
+            .split(area);
+        let res_chunks = Layout::default()
+            .direction(Direction::Vertical)
+            .constraints([Constraint::Length(6), Constraint::Min(0)])
+            .split(chunks[0]);
+        let info_chunks = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints([
+                Constraint::Ratio(1, 3),
+                Constraint::Ratio(1, 3),
+                Constraint::Ratio(1, 3),
+            ])
+            .split(res_chunks[0]);
+
+        if !render_controls(&controls, chunks[1], buf, theme) {
             // Narrow terminal: fall back to a single-line text legend.
             let parts: Vec<String> = controls
                 .iter()
@@ -719,6 +776,64 @@ impl ThemedWidget for &results::Results {
 mod tests {
     use super::*;
 
+    mod control_packing {
+        use super::*;
+
+        fn ctrl(label: char, desc: &'static str) -> Control {
+            Control {
+                label,
+                desc,
+                right_style: false,
+            }
+        }
+
+        // Item widths: KEY_W(7) + 1 + desc.len()
+        // quit=12, continue=16, repeat=14, "new test"=16, "main menu"=17,
+        // "practice missed words"=29.
+
+        #[test]
+        fn fits_one_row_when_wide() {
+            let controls = [
+                ctrl('Q', "quit"),
+                ctrl('C', "continue"),
+                ctrl('R', "new test"),
+                ctrl('M', "main menu"),
+                ctrl('P', "practice missed words"),
+            ];
+            assert_eq!(pack_control_rows(&controls, 200), vec![5]);
+            assert_eq!(control_art_rows(&controls, 200), 1);
+        }
+
+        #[test]
+        fn wraps_when_too_narrow_for_one_row() {
+            // Width 80: Q(12)+3+C(16)+3+R(16)+3+M(17) = 70 fits, +3+P(29)=102 wraps.
+            let controls = [
+                ctrl('Q', "quit"),
+                ctrl('C', "continue"),
+                ctrl('R', "new test"),
+                ctrl('M', "main menu"),
+                ctrl('P', "practice missed words"),
+            ];
+            assert_eq!(pack_control_rows(&controls, 80), vec![4, 1]);
+            assert_eq!(control_art_rows(&controls, 80), 2);
+        }
+
+        #[test]
+        fn returns_zero_rows_when_widest_doesnt_fit() {
+            let controls = [
+                ctrl('Q', "quit"),
+                ctrl('P', "practice missed words"),
+            ];
+            // Widest tile is 29; width 20 cannot hold it.
+            assert_eq!(control_art_rows(&controls, 20), 0);
+        }
+
+        #[test]
+        fn empty_controls_zero_rows() {
+            assert_eq!(control_art_rows(&[], 100), 0);
+        }
+    }
+
     mod split_words {
         use super::Status::*;
         use super::*;
@@ -812,7 +927,7 @@ mod tests {
         #[test]
         fn typed_word_ascii_skips_unicode() {
             // Word "café" typed as "caf" - the é is shown as Skipped (yellow)
-            let text = "caf\u{00e9}";
+            let text = "café";
             let word = TestWord {
                 range: 0..text.len() as u32,
                 target: "caf".to_string().into_boxed_str(),
@@ -823,7 +938,7 @@ mod tests {
             let got = split_typed_word(&word, text, true);
             let expected = vec![
                 ("caf".to_string(), Correct),
-                ("\u{00e9}".to_string(), Skipped),
+                ("é".to_string(), Skipped),
             ];
             assert_eq!(got, expected);
         }
@@ -831,7 +946,7 @@ mod tests {
         #[test]
         fn current_word_ascii_skips_unicode() {
             // Word "café", user has typed "ca", cursor should be on 'f'
-            let text = "caf\u{00e9}";
+            let text = "café";
             let word = TestWord {
                 range: 0..text.len() as u32,
                 target: "caf".to_string().into_boxed_str(),
@@ -843,7 +958,7 @@ mod tests {
             let expected = vec![
                 ("ca".to_string(), CurrentCorrect),
                 ("f".to_string(), Cursor),
-                ("\u{00e9}".to_string(), Skipped),
+                ("é".to_string(), Skipped),
             ];
             assert_eq!(got, expected);
         }

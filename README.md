@@ -30,7 +30,7 @@ Practice, improve, and measure your touch typing skills while reading and learni
 
 Read a book or other document while simultaneously improving your typing speed and accuracy.
 
-This project is under active development with new features comming soon!
+This project is under active development with new features coming soon!
 Please report bugs and/or feature requests to the github issue tracker.
 Pull requests are welcomed and encouraged.
 
@@ -51,6 +51,10 @@ cargo install ttypo
 ```
 ttypo [OPTIONS] [PATH] [COMMAND]
 
+Commands:
+  completions  Generate shell completions
+  help         Print this message or the help of the given subcommand(s)
+
 Arguments:
   [PATH]  Read test contents from the specified file, or "-" for stdin
 
@@ -65,6 +69,8 @@ Options:
       --sudden-death          Enable sudden death mode to restart on first error
       --no-backspace          Disable backspace
       --ascii                 Display all but skip non-ASCII characters during typing
+      --restart               Ignore saved progress for the input file and start from the beginning
+      --no-save               Do not persist per-document progress for this invocation
   -h, --help                  Print help
   -V, --version               Print version
 ```
@@ -140,27 +146,27 @@ default_language = "english200"
 [theme]
 # default style (includes empty cells)
 default = "none"
-# title text
+# title text and key-art labels
 title = "e6e6e6;bold"
 
 ## test styles ##
 
 # prompt box border
 prompt_border = "505078"
-# border type
+# border type: plain, rounded, double, thick, quadrantinside, quadrantoutside
 border_type = "rounded"
 
 # correctly typed words
-prompt_correct = "64c864"
+prompt_correct = "647864"
 # incorrectly typed words
-prompt_incorrect = "e65050"
+prompt_incorrect = "c85050"
 # untyped words
-prompt_untyped = "5a5a5a"
+prompt_untyped = "c8c8c8"
 
 # correctly typed letters in current word
-prompt_current_correct = "78e678;bold"
+prompt_current_correct = "78b478;bold"
 # incorrectly typed letters in current word
-prompt_current_incorrect = "ff6450;bold"
+prompt_current_incorrect = "c86450;bold"
 # untyped letters in current word
 prompt_current_untyped = "c8c8dc;bold"
 
@@ -169,7 +175,7 @@ prompt_cursor = "none;reversed;bold"
 # skipped non-typeable characters (--ascii flag)
 prompt_skipped = "c8b43c"
 
-## status bar styles ##
+## status bar styles (during test) ##
 
 # live WPM counter
 status_wpm = "64c864;bold"
@@ -184,36 +190,33 @@ status_progress_empty = "323232"
 
 ## results styles ##
 
-# overview text
-results_overview = "64c864;bold"
-# overview border
+# overview box border
 results_overview_border = "505078"
-
-# worst keys text
-results_worst_keys = "dcb43c;bold"
-# worst keys border
+# worst-keys box border
 results_worst_keys_border = "505078"
-
-# missed words text
-results_missed_words = "e65050;bold"
-# missed words border
+# missed-words box border
 results_missed_words_border = "505078"
 
-# results chart line
+# WPM line on the chart
 results_chart = "50b4dc"
-# mistake markers on chart
+# mistake markers on the chart
 results_chart_mistakes = "e65050"
-# results chart x-axis label
-results_chart_x = "6e6e6e"
-# results chart y-axis label
+# y-axis title on the chart
 results_chart_y = "6e6e6e;bold"
 
-# restart/quit prompt
+# control hints under the chart (text-fallback styling and key descriptions)
 results_restart_prompt = "b4b4c8;bold"
+
+## resume prompt styles ##
+
+# "File changed" warning title and inline warning text
+resume_prompt_warning = "e6b450;bold"
+# emphasized labels (source path, [Y]/[N]/[D] buttons)
+resume_prompt_emphasis = "none;bold"
 ```
 
 ### text style format
-`forground-color:background-color;modifiers`
+`foreground-color:background-color;modifiers`
 
 Colors can be a terminal color name, 6-digit hex, or none.
 Modifiers must be separated by semicolons.
