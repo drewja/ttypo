@@ -125,9 +125,20 @@ impl KeyboardArt {
         }
     }
 
-    fn apply_state(&self, caps: bool, shift: bool) -> Vec<Vec<char>> {
+    fn apply_state(
+        &self,
+        caps: bool,
+        shift: bool,
+        overrides: &HashMap<String, String>,
+    ) -> Vec<Vec<char>> {
         let mut rows = self.grid.clone();
         for (label, insts) in &self.instances {
+            if let Some(replacement) = overrides.get(label) {
+                for inst in insts {
+                    write_label_override(&mut rows, inst, replacement);
+                }
+                continue;
+            }
             let Some(letter) = is_single_letter(label) else {
                 continue;
             };
@@ -141,6 +152,28 @@ impl KeyboardArt {
             }
         }
         rows
+    }
+}
+
+fn write_label_override(rows: &mut [Vec<char>], inst: &KeyInst, replacement: &str) {
+    let label_row = &mut rows[inst.r + 1];
+    let slot_start = inst.c + 1 + usize::from(inst.has_left);
+    let slot_end = inst.right - usize::from(inst.has_right);
+    if slot_end <= slot_start {
+        return;
+    }
+    for cell in &mut label_row[slot_start..slot_end] {
+        *cell = ' ';
+    }
+    // Left-align with one leading space so the override visually matches the
+    // way " Enter      " is laid out in the source art.
+    let leading = 1;
+    for (i, ch) in replacement.chars().enumerate() {
+        let pos = slot_start + leading + i;
+        if pos >= slot_end {
+            break;
+        }
+        label_row[pos] = ch;
     }
 }
 
@@ -279,6 +312,12 @@ impl KeyboardState {
     pub fn has_active_flashes(&self) -> bool {
         self.next_deadline().is_some()
     }
+
+    pub fn is_pressed(&self, label: &str) -> bool {
+        self.pressed
+            .get(label)
+            .is_some_and(|d| *d > Instant::now())
+    }
 }
 
 /// Split `area` into a display rect (top) and an optional keyboard rect (bottom).
@@ -369,6 +408,7 @@ fn char_to_label(c: char) -> Option<String> {
 pub struct KeyboardWidget<'a> {
     pub art: &'a KeyboardArt,
     pub state: &'a KeyboardState,
+    pub overrides: HashMap<String, String>,
 }
 
 impl<'a> KeyboardWidget<'a> {
@@ -376,7 +416,13 @@ impl<'a> KeyboardWidget<'a> {
         Self {
             art: KeyboardArt::embedded(),
             state,
+            overrides: HashMap::new(),
         }
+    }
+
+    pub fn with_overrides(mut self, overrides: HashMap<String, String>) -> Self {
+        self.overrides = overrides;
+        self
     }
 }
 
@@ -386,7 +432,7 @@ impl ThemedWidget for KeyboardWidget<'_> {
         if area.width < art.width || area.height < art.height {
             return;
         }
-        let state_grid = art.apply_state(false, false);
+        let state_grid = art.apply_state(false, false, &self.overrides);
 
         let base_style = theme.prompt_untyped;
         for (r, row) in state_grid.iter().enumerate() {
@@ -474,18 +520,33 @@ mod tests {
     #[test]
     fn apply_state_lowercases_letters_keeps_pairs() {
         let art = KeyboardArt::embedded();
-        let g = art.apply_state(false, false);
+        let no_overrides: HashMap<String, String> = HashMap::new();
+        let g = art.apply_state(false, false, &no_overrides);
         let q = &art.instances["Q"][0];
         assert_eq!(g[q.r + 1][q.label_col], 'q');
         let one = &art.instances["1!"][0];
         assert_eq!(g[one.r + 1][one.label_col], '1');
         assert_eq!(g[one.r + 1][one.label_col + 1], '!');
 
-        let g_shift = art.apply_state(false, true);
+        let g_shift = art.apply_state(false, true, &no_overrides);
         assert_eq!(g_shift[q.r + 1][q.label_col], 'Q');
         // Pairs render both glyphs as in the art, regardless of shift state.
         assert_eq!(g_shift[one.r + 1][one.label_col], '1');
         assert_eq!(g_shift[one.r + 1][one.label_col + 1], '!');
+    }
+
+    #[test]
+    fn apply_state_writes_overrides() {
+        let art = KeyboardArt::embedded();
+        let mut overrides: HashMap<String, String> = HashMap::new();
+        overrides.insert("H".into(), "\u{2190}H".into());
+        let g = art.apply_state(false, false, &overrides);
+        let h = &art.instances["H"][0];
+        // The override is left-aligned with 1 leading space inside the slot.
+        let row = &g[h.r + 1];
+        let label: String = row[h.c + 1..h.right].iter().collect();
+        assert!(label.contains('\u{2190}'), "row was: {:?}", label);
+        assert!(label.contains('H'), "row was: {:?}", label);
     }
 
     #[test]
