@@ -215,15 +215,14 @@ pub fn run(
     loop {
         terminal.draw(|f| {
             let (display, kb_rect) = split_with_keyboard(f.area(), *kb_visible);
-            let title_widget = TitleWidget {
-                title: &title,
-                kb,
-            };
+            let title_widget = TitleWidget { title: &title, kb };
             f.render_widget(config.theme.apply_to(&title_widget), display);
             if let Some(r) = kb_rect {
                 let overrides = title.kb_label_overrides();
                 f.render_widget(
-                    config.theme.apply_to(KeyboardWidget::new(kb).with_overrides(overrides)),
+                    config
+                        .theme
+                        .apply_to(KeyboardWidget::new(kb).with_overrides(overrides)),
                     r,
                 );
             }
@@ -540,12 +539,7 @@ fn render_enter_key(
         let pad_cells = inner.saturating_sub(3 + action_len);
         let pad = " ".repeat(pad_cells as usize);
         buf.set_string(origin_x + 4 + action_len, origin_y + 1, &pad, outline);
-        buf.set_string(
-            origin_x + 1 + inner,
-            origin_y + 1,
-            "││",
-            outline,
-        );
+        buf.set_string(origin_x + 1 + inner, origin_y + 1, "││", outline);
     }
 }
 
@@ -572,31 +566,19 @@ fn render_hint_key(
     let label_style = theme.title;
     let pressed_style = theme.prompt_current_correct;
     let label_w = label.chars().count();
-    debug_assert!((1..=2).contains(&label_w), "hint key label must be 1 or 2 cells");
+    debug_assert!(
+        (1..=2).contains(&label_w),
+        "hint key label must be 1 or 2 cells"
+    );
 
     let static_label_style = if pressed { pressed_style } else { label_style };
 
     if right_style {
         if pressed {
             // Wing flattens: ┐→─, \→─. Right side keeps the lone │ on rows 1, 2.
-            buf.set_string(
-                origin_x,
-                origin_y,
-                "┏─────┓",
-                pressed_style,
-            );
-            buf.set_string(
-                origin_x,
-                origin_y + 2,
-                "├─────│",
-                outline,
-            );
-            buf.set_string(
-                origin_x,
-                origin_y + 3,
-                "┗─────┛",
-                pressed_style,
-            );
+            buf.set_string(origin_x, origin_y, "┏─────┓", pressed_style);
+            buf.set_string(origin_x, origin_y + 2, "├─────│", outline);
+            buf.set_string(origin_x, origin_y + 3, "┗─────┛", pressed_style);
             // Label row: shift label right by one, lose the inner │.
             // Cells: │ ' ' <leading_extra> <label> <trailing> │
             buf.set_string(origin_x, origin_y + 1, "│", pressed_style);
@@ -610,24 +592,9 @@ fn render_hint_key(
             // Force the col-6 │ in pressed style as well.
             buf.set_string(origin_x + 6, origin_y + 1, "│", pressed_style);
         } else {
-            buf.set_string(
-                origin_x,
-                origin_y,
-                "┏────┐┓",
-                outline,
-            );
-            buf.set_string(
-                origin_x,
-                origin_y + 2,
-                "├────\\│",
-                outline,
-            );
-            buf.set_string(
-                origin_x,
-                origin_y + 3,
-                "┗─────┛",
-                outline,
-            );
+            buf.set_string(origin_x, origin_y, "┏────┐┓", outline);
+            buf.set_string(origin_x, origin_y + 2, "├────\\│", outline);
+            buf.set_string(origin_x, origin_y + 3, "┗─────┛", outline);
             let leading = if label_w == 1 { 2 } else { 1 };
             let trailing = 4 - leading - label_w;
             let prefix = format!("│{}", " ".repeat(leading));
@@ -639,24 +606,9 @@ fn render_hint_key(
         }
     } else if pressed {
         // Wing flattens: ┌→─, /→─. Left side keeps the lone │ on rows 1, 2.
-        buf.set_string(
-            origin_x,
-            origin_y,
-            "┏─────┓",
-            pressed_style,
-        );
-        buf.set_string(
-            origin_x,
-            origin_y + 2,
-            "│─────┤",
-            outline,
-        );
-        buf.set_string(
-            origin_x,
-            origin_y + 3,
-            "┗─────┛",
-            pressed_style,
-        );
+        buf.set_string(origin_x, origin_y, "┏─────┓", pressed_style);
+        buf.set_string(origin_x, origin_y + 2, "│─────┤", outline);
+        buf.set_string(origin_x, origin_y + 3, "┗─────┛", pressed_style);
         // Label row: shift label left by one, lose the inner │.
         buf.set_string(origin_x, origin_y + 1, "│", pressed_style);
         buf.set_string(origin_x + 1, origin_y + 1, " ", outline);
@@ -667,24 +619,9 @@ fn render_hint_key(
         buf.set_string(label_x + label_w as u16, origin_y + 1, &suffix, outline);
         buf.set_string(origin_x + 6, origin_y + 1, "│", pressed_style);
     } else {
-        buf.set_string(
-            origin_x,
-            origin_y,
-            "┏┌────┓",
-            outline,
-        );
-        buf.set_string(
-            origin_x,
-            origin_y + 2,
-            "│/────┤",
-            outline,
-        );
-        buf.set_string(
-            origin_x,
-            origin_y + 3,
-            "┗─────┛",
-            outline,
-        );
+        buf.set_string(origin_x, origin_y, "┏┌────┓", outline);
+        buf.set_string(origin_x, origin_y + 2, "│/────┤", outline);
+        buf.set_string(origin_x, origin_y + 3, "┗─────┛", outline);
         let trailing = 4 - 1 - label_w;
         buf.set_string(origin_x, origin_y + 1, "││ ", outline);
         let label_x = origin_x + 3;
@@ -790,9 +727,8 @@ impl Title {
         let left_h = banner_h.max(KEY_H) + BANNER_HINT_GAP + hints_h;
         let side_h = left_h.max(settings_h);
         let available_for_settings = inner.width.saturating_sub(left_w_target + COL_GAP);
-        let side_by_side_fits = banner_h > 0
-            && available_for_settings >= MIN_CONTENT_W
-            && inner.height >= side_h;
+        let side_by_side_fits =
+            banner_h > 0 && available_for_settings >= MIN_CONTENT_W && inner.height >= side_h;
 
         let content_w: u16 = if side_by_side_fits {
             available_for_settings.min(PREFERRED_CONTENT_W)

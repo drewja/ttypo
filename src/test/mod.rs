@@ -347,7 +347,10 @@ impl Test {
 
 #[cfg(test)]
 pub(crate) fn flat_content(words: &[&str]) -> Arc<Content> {
-    Arc::new(Content::from_word_list(words.iter().copied(), String::new()))
+    Arc::new(Content::from_word_list(
+        words.iter().copied(),
+        String::new(),
+    ))
 }
 
 /// Layout-aware test content: caller hands in an explicit buffer with `\n`

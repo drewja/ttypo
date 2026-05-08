@@ -829,10 +829,7 @@ mod tests {
         writeln!(f, "hello—world “quoted”").unwrap();
 
         let (contents, _) = parts(&make_opt(path, false));
-        assert_eq!(
-            contents,
-            vec!["hello—world", "“quoted”"]
-        );
+        assert_eq!(contents, vec!["hello—world", "“quoted”"]);
     }
 
     #[test]

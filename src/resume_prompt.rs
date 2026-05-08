@@ -105,8 +105,7 @@ fn render(info: &ResumeInfo, config: &Config, area: Rect, buf: &mut ratatui::buf
 
     let mut lines: Vec<Line> = vec![
         Line::from(""),
-        Line::from(Span::styled(info.source_label.clone(), emphasis))
-            .alignment(Alignment::Center),
+        Line::from(Span::styled(info.source_label.clone(), emphasis)).alignment(Alignment::Center),
         Line::from(""),
     ];
 

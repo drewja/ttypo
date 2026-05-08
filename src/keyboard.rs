@@ -314,9 +314,7 @@ impl KeyboardState {
     }
 
     pub fn is_pressed(&self, label: &str) -> bool {
-        self.pressed
-            .get(label)
-            .is_some_and(|d| *d > Instant::now())
+        self.pressed.get(label).is_some_and(|d| *d > Instant::now())
     }
 }
 

@@ -820,10 +820,7 @@ mod tests {
 
         #[test]
         fn returns_zero_rows_when_widest_doesnt_fit() {
-            let controls = [
-                ctrl('Q', "quit"),
-                ctrl('P', "practice missed words"),
-            ];
+            let controls = [ctrl('Q', "quit"), ctrl('P', "practice missed words")];
             // Widest tile is 29; width 20 cannot hold it.
             assert_eq!(control_art_rows(&controls, 20), 0);
         }
@@ -936,10 +933,7 @@ mod tests {
             };
 
             let got = split_typed_word(&word, text, true);
-            let expected = vec![
-                ("caf".to_string(), Correct),
-                ("é".to_string(), Skipped),
-            ];
+            let expected = vec![("caf".to_string(), Correct), ("é".to_string(), Skipped)];
             assert_eq!(got, expected);
         }
 
