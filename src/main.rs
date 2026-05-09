@@ -106,11 +106,9 @@ enum Command {
 }
 
 impl Opt {
-    /// Generate test contents.
-    ///
-    /// Returns `Ok(Some(content))` on success. Returns `Ok(None)` only in
-    /// language mode when no matching language file is found, and `Err` on
-    /// I/O failure reading a file or stdin.
+    // Generate test contents. Returns Ok(Some(content)) on success;
+    // Ok(None) only in language mode when no matching language file is found;
+    // Err on I/O failure reading a file or stdin.
     fn gen_contents(&self) -> io::Result<Option<Arc<Content>>> {
         match &self.contents {
             Some(path) => {
@@ -175,7 +173,6 @@ impl Opt {
         }
     }
 
-    /// Configuration
     fn config(&self) -> Config {
         fs::read(
             self.config
@@ -189,7 +186,7 @@ impl Opt {
         .unwrap_or_default()
     }
 
-    /// Installed languages under config directory
+    // Installed languages: built-in plus anything dropped under config dir.
     fn languages(&self) -> io::Result<impl Iterator<Item = OsString> + use<>> {
         let builtin = Resources::iter().filter_map(|name| {
             name.strip_prefix("language/")
@@ -208,27 +205,24 @@ impl Opt {
         Ok(builtin.chain(configured))
     }
 
-    /// Config directory
     fn config_dir(&self) -> PathBuf {
         dirs::config_dir()
             .expect("Failed to find config directory.")
             .join("ttypo")
     }
 
-    /// Data directory (persistent state: per-document typing progress, etc.).
-    /// Linux: `~/.local/share/ttypo`.
+    // Persistent state (per-document typing progress, etc).
+    // Linux: ~/.local/share/ttypo.
     fn data_dir(&self) -> PathBuf {
         dirs::data_dir()
             .expect("Failed to find data directory.")
             .join("ttypo")
     }
 
-    /// Language directory under config directory
     fn language_dir(&self) -> PathBuf {
         self.config_dir().join("language")
     }
 
-    /// Installed languages sorted and deduplicated.
     fn languages_sorted(&self) -> Vec<String> {
         let mut langs: Vec<String> = self
             .languages()
@@ -242,8 +236,8 @@ impl Opt {
         langs
     }
 
-    /// Validate that the language used in language mode resolves to a file.
-    /// `--language-file` bypasses language-name lookup, so it's always ok.
+    // Validate that the language used in language mode resolves to a file.
+    // --language-file bypasses language-name lookup, so it's always ok.
     fn validate_language(&self, config: &Config) -> Result<(), String> {
         if self.language_file.is_some() {
             return Ok(());
@@ -258,8 +252,8 @@ impl Opt {
     }
 }
 
-/// Context carried for the duration of a file-mode session so we can save
-/// progress without recomputing the canonical path / content hash each time.
+// Carried for the duration of a file-mode session so we can save progress
+// without recomputing the canonical path / content hash each time.
 struct ResumeCtx {
     canonical_path: PathBuf,
     content_hash: String,
@@ -304,8 +298,8 @@ fn clear_progress(store: &mut ProgressStore, ctx: &ResumeCtx) {
     let _ = store.save();
 }
 
-/// Save every this-many newly-typed words so a crash or kill doesn't lose
-/// more than a handful of words on a long document.
+// Save every this-many newly-typed words so a crash or kill doesn't lose
+// more than a handful of words on a long document.
 const PERIODIC_SAVE_INTERVAL: usize = 50;
 
 fn teardown() -> io::Result<()> {
@@ -396,10 +390,8 @@ fn main() -> io::Result<()> {
     let mut file_contents: Option<Arc<Content>> = if let Some(path) = opt.contents.as_ref() {
         let content = match opt.gen_contents() {
             Ok(Some(c)) => c,
-            Ok(None) => {
-                eprintln!("error: couldn't get test contents.");
-                std::process::exit(1);
-            }
+            // gen_contents only returns Ok(None) in language mode.
+            Ok(None) => unreachable!("file/stdin mode always returns Some or Err"),
             Err(e) => {
                 if path.as_os_str() == "-" {
                     eprintln!("error: failed to read from stdin: {}", e);
@@ -787,7 +779,7 @@ mod tests {
         }
     }
 
-    /// Collect words + lines from the Content produced by `gen_contents`.
+    // Collect words + lines from the Content produced by `gen_contents`.
     fn parts(opt: &Opt) -> (Vec<String>, Vec<test::DisplayLine>) {
         let content = opt.gen_contents().unwrap().unwrap();
         let words: Vec<String> = (0..content.word_count())

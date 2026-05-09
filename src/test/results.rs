@@ -139,7 +139,12 @@ fn calc_timing(events: &[&super::TestEvent]) -> TimingData {
         .map(|(key, (total, count))| (key, total / count as f64))
         .collect();
 
-    timing.overall_cps = timing.per_event.len() as f64 / timing.per_event.iter().sum::<f64>();
+    let span: f64 = timing.per_event.iter().sum();
+    timing.overall_cps = if span > 0.0 {
+        timing.per_event.len() as f64 / span
+    } else {
+        0.0
+    };
 
     timing
 }

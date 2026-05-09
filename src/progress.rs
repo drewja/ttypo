@@ -41,20 +41,32 @@ struct FileFormat {
 pub struct ProgressStore {
     dir: PathBuf,
     documents: BTreeMap<String, Entry>,
+    // Set when the on-disk file declares a newer schema than this binary
+    // understands. We refuse to save in that case so we don't overwrite a
+    // future-version file with our older format.
+    read_only: bool,
 }
 
 impl ProgressStore {
     /// Load the store from `<dir>/progress.toml`. Returns an empty store if
-    /// the file is missing or malformed. Persistence is best-effort.
+    /// the file is missing or malformed. If the file declares a newer schema
+    /// than this binary supports, returns an empty read-only store so future
+    /// saves don't downgrade it. Persistence is best-effort.
     pub fn load(dir: PathBuf) -> Self {
         let path = dir.join(FILENAME);
-        let documents = match fs::read_to_string(&path) {
-            Ok(text) => toml::from_str::<FileFormat>(&text)
-                .map(|f| f.documents)
-                .unwrap_or_default(),
-            Err(_) => BTreeMap::new(),
+        let (documents, read_only) = match fs::read_to_string(&path) {
+            Ok(text) => match toml::from_str::<FileFormat>(&text) {
+                Ok(f) if f.version <= SCHEMA_VERSION => (f.documents, false),
+                Ok(_) => (BTreeMap::new(), true),
+                Err(_) => (BTreeMap::new(), false),
+            },
+            Err(_) => (BTreeMap::new(), false),
         };
-        Self { dir, documents }
+        Self {
+            dir,
+            documents,
+            read_only,
+        }
     }
 
     pub fn lookup(&self, canonical_path: &Path) -> Option<&Entry> {
@@ -70,7 +82,11 @@ impl ProgressStore {
     }
 
     /// Serialize the store to disk. Creates the data directory if missing.
+    /// No-op when the store was loaded from a newer-schema file.
     pub fn save(&self) -> io::Result<()> {
+        if self.read_only {
+            return Ok(());
+        }
         fs::create_dir_all(&self.dir)?;
         let file = FileFormat {
             version: SCHEMA_VERSION,
@@ -98,10 +114,9 @@ pub fn hash_bytes(bytes: &[u8]) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Hex-encoded SHA-256 hash of a file's bytes, streamed so we never hold the
-/// whole file in memory at once. The mmap-backed flow prefers `hash_bytes`
-/// over the already-mapped slice; this exists for tests that only have a
-/// path in hand.
+// Hex-encoded SHA-256 hash of a file's bytes, streamed so we never hold the
+// whole file in memory at once. The mmap-backed flow prefers hash_bytes over
+// the already-mapped slice; this exists for tests that only have a path.
 #[cfg(test)]
 fn hash_file(path: &Path) -> io::Result<String> {
     let mut file = fs::File::open(path)?;
@@ -194,6 +209,26 @@ future_entry_field = true
         let entry = store.lookup(Path::new("/tmp/book.txt")).unwrap();
         assert_eq!(entry.word_index, 7);
         assert_eq!(entry.content_hash, "deadbeef");
+    }
+
+    #[test]
+    fn future_schema_loads_empty_and_save_is_noop() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILENAME);
+        let future = format!(
+            "version = {}\n\n[documents.\"/tmp/x.txt\"]\ncontent_hash = \"a\"\nword_index = 1\n",
+            SCHEMA_VERSION + 1,
+        );
+        fs::write(&path, &future).unwrap();
+
+        let mut store = ProgressStore::load(dir.path().to_path_buf());
+        assert!(store.lookup(Path::new("/tmp/x.txt")).is_none());
+
+        // Mutate and save: must NOT overwrite the future-version file.
+        store.upsert(Path::new("/tmp/y.txt"), sample_entry());
+        store.save().unwrap();
+        let on_disk = fs::read_to_string(&path).unwrap();
+        assert_eq!(on_disk, future, "future-version file must be preserved");
     }
 
     #[test]

@@ -388,8 +388,8 @@ impl ThemedWidget for &TitleWidget<'_> {
 #[derive(Clone, Copy)]
 struct HintKey {
     label: &'static str,
-    /// Matching label in `keyboard.txt`, used to look up press state so the
-    /// hint key flashes in sync with the keyboard widget.
+    // Matching label in keyboard.txt, used to look up press state so the
+    // hint key flashes in sync with the keyboard widget.
     kb_label: &'static str,
     right_style: bool,
 }

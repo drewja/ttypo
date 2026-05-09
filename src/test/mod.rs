@@ -3,17 +3,22 @@ pub mod results;
 use crate::content::Content;
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use std::collections::VecDeque;
 use std::fmt;
 use std::ops::Range;
 use std::sync::Arc;
 use std::time::Instant;
+
+// Number of intervals (i.e. WPM_WINDOW + 1 event timestamps) used by the
+// rolling live-WPM calculation.
+const WPM_WINDOW: usize = 10;
 
 /// Returns true if a character is printable ASCII (0x20-0x7E).
 pub fn is_typeable(c: char) -> bool {
     c.is_ascii() && !c.is_ascii_control()
 }
 
-/// Returns the typeable portion of `text` as a `Box<str>`.
+// Returns the typeable portion of `text` as a `Box<str>`.
 fn target_text(text: &str, ascii: bool) -> Box<str> {
     if ascii {
         text.chars()
@@ -87,6 +92,9 @@ pub struct Test {
     /// Label describing the source of the test contents (language name,
     /// filename, "stdin", or "practice").
     pub source: String,
+    // Sliding window of recent event timestamps used by `live_wpm`. Capped
+    // at WPM_WINDOW + 1; the oldest entry is dropped when full.
+    recent_event_times: VecDeque<Instant>,
 }
 
 impl Test {
@@ -124,6 +132,7 @@ impl Test {
             ascii,
             start_time: None,
             source,
+            recent_event_times: VecDeque::with_capacity(WPM_WINDOW + 1),
         };
         test.skip_non_typeable_words();
         test
@@ -163,28 +172,27 @@ impl Test {
     /// event timestamps to get up to 10 interval durations, averages them for
     /// a CPS, then scales to WPM (60 sec / 5 chars per word = *12).
     pub fn live_wpm(&self) -> f64 {
-        const WINDOW: usize = 10;
-        let mut times: Vec<Instant> = self
-            .words
-            .iter()
-            .flat_map(|w| w.events.iter().map(|e| e.time))
-            .collect();
-        if times.len() < 2 {
+        if self.recent_event_times.len() < 2 {
             return 0.0;
         }
-        times.sort_unstable();
-        let start = times.len().saturating_sub(WINDOW + 1);
-        let window = &times[start..];
-        let span = window
-            .last()
-            .unwrap()
-            .duration_since(*window.first().unwrap())
-            .as_secs_f64();
+        let first = *self.recent_event_times.front().unwrap();
+        let last = *self.recent_event_times.back().unwrap();
+        let span = last
+            .checked_duration_since(first)
+            .map(|d| d.as_secs_f64())
+            .unwrap_or(0.0);
         if span <= 0.0 {
             return 0.0;
         }
-        let intervals = (window.len() - 1) as f64;
+        let intervals = (self.recent_event_times.len() - 1) as f64;
         (intervals / span) * 12.0
+    }
+
+    fn record_time(&mut self, time: Instant) {
+        self.recent_event_times.push_back(time);
+        while self.recent_event_times.len() > WPM_WINDOW + 1 {
+            self.recent_event_times.pop_front();
+        }
     }
 
     pub fn progress(&self) -> (usize, usize) {
@@ -211,14 +219,16 @@ impl Test {
         let word = &mut self.words[self.current_word];
         match key.code {
             KeyCode::Char(' ') | KeyCode::Enter => {
-                if word.target.chars().nth(word.progress.len()) == Some(' ') {
+                if word.target.chars().nth(word.progress.chars().count()) == Some(' ') {
+                    let now = Instant::now();
                     word.progress.push(' ');
                     word.events.push(TestEvent {
-                        time: Instant::now(),
+                        time: now,
                         correct: Some(true),
                         key,
                         target: None,
                     });
+                    self.record_time(now);
                 } else if !word.progress.is_empty() || word.target.is_empty() {
                     let correct = word.progress.as_str() == &*word.target;
                     if !correct {
@@ -227,12 +237,14 @@ impl Test {
                     if self.sudden_death_enabled && !correct {
                         self.reset();
                     } else {
+                        let now = Instant::now();
                         word.events.push(TestEvent {
-                            time: Instant::now(),
+                            time: now,
                             correct: Some(correct),
                             key,
                             target: None,
                         });
+                        self.record_time(now);
                         self.next_word();
                         self.skip_non_typeable_words();
                     }
@@ -243,13 +255,15 @@ impl Test {
                     self.last_word();
                 } else if self.backspace_enabled {
                     let correct = !word.target.starts_with(word.progress.as_str());
+                    let now = Instant::now();
                     word.events.push(TestEvent {
-                        time: Instant::now(),
+                        time: now,
                         correct: Some(correct),
                         key,
                         target: None,
                     });
                     word.progress.pop();
+                    self.record_time(now);
                 }
             }
             // CTRL-BackSpace and CTRL-W
@@ -260,18 +274,20 @@ impl Test {
                     self.last_word();
                 }
 
+                let now = Instant::now();
                 let word = &mut self.words[self.current_word];
 
                 word.events.push(TestEvent {
-                    time: Instant::now(),
+                    time: now,
                     correct: None,
                     key,
                     target: None,
                 });
                 word.progress.clear();
+                self.record_time(now);
             }
             KeyCode::Char(c) => {
-                let target_ch = word.target.chars().nth(word.progress.len());
+                let target_ch = word.target.chars().nth(word.progress.chars().count());
                 word.progress.push(c);
                 let correct = word.target.starts_with(word.progress.as_str());
                 if !correct {
@@ -280,8 +296,9 @@ impl Test {
                 if self.sudden_death_enabled && !correct {
                     self.reset();
                 } else {
+                    let now = Instant::now();
                     word.events.push(TestEvent {
-                        time: Instant::now(),
+                        time: now,
                         correct: Some(correct),
                         key,
                         target: target_ch,
@@ -290,9 +307,11 @@ impl Test {
                     // length, regardless of correctness. Mirrors the implicit
                     // "commit on space" used for non-last words, which the
                     // last word can't do because there's no following word.
-                    if word.progress.chars().count() >= word.target.chars().count()
-                        && self.current_word == self.words.len() - 1
-                    {
+                    let last_word_finished = word.progress.chars().count()
+                        >= word.target.chars().count()
+                        && self.current_word == self.words.len() - 1;
+                    self.record_time(now);
+                    if last_word_finished {
                         self.complete = true;
                         self.current_word = 0;
                     }
@@ -323,6 +342,7 @@ impl Test {
             word.progress.clear();
             word.events.clear();
         });
+        self.recent_event_times.clear();
         self.current_word = 0;
         self.complete = false;
         self.start_time = None;
@@ -353,9 +373,9 @@ pub(crate) fn flat_content(words: &[&str]) -> Arc<Content> {
     ))
 }
 
-/// Layout-aware test content: caller hands in an explicit buffer with `\n`
-/// between lines and ` ` between words; tokenization (ranges + DisplayLines)
-/// is delegated to `Content::from_text` rather than recomputed alongside it.
+// Layout-aware test content: caller hands in an explicit buffer with `\n`
+// between lines and ` ` between words; tokenization (ranges + DisplayLines)
+// is delegated to Content::from_text rather than recomputed alongside it.
 #[cfg(test)]
 pub(crate) fn layout_content(buf: &str) -> Arc<Content> {
     Arc::new(Content::from_text(buf.to_string(), String::new()))
@@ -555,8 +575,8 @@ mod tests {
         assert!(test.words.iter().all(|w| w.progress.is_empty()));
     }
 
-    fn push_event_at(word: &mut TestWord, time: Instant) {
-        word.events.push(TestEvent {
+    fn push_event_at(test: &mut Test, word_idx: usize, time: Instant) {
+        test.words[word_idx].events.push(TestEvent {
             time,
             key: KeyEvent {
                 code: KeyCode::Char('x'),
@@ -567,6 +587,7 @@ mod tests {
             correct: Some(true),
             target: None,
         });
+        test.record_time(time);
     }
 
     #[test]
@@ -575,7 +596,7 @@ mod tests {
         let mut test = make_test(&["aaaaaaaaaaaaaa"], Vec::new(), false);
         let base = Instant::now();
         for i in 0..11 {
-            push_event_at(&mut test.words[0], base + Duration::from_millis(100 * i));
+            push_event_at(&mut test, 0, base + Duration::from_millis(100 * i));
         }
         let wpm = test.live_wpm();
         assert!((wpm - 120.0).abs() < 1e-6, "expected 120 wpm, got {}", wpm);
@@ -587,10 +608,11 @@ mod tests {
         // outside the rolling window and have no effect.
         let mut test = make_test(&["aaaaaaaaaaaaaaa"], Vec::new(), false);
         let base = Instant::now();
-        push_event_at(&mut test.words[0], base); // ancient event
+        push_event_at(&mut test, 0, base); // ancient event
         for i in 0..11 {
             push_event_at(
-                &mut test.words[0],
+                &mut test,
+                0,
                 base + Duration::from_secs(60) + Duration::from_millis(100 * i),
             );
         }
@@ -607,7 +629,7 @@ mod tests {
         test.words[1].progress = "bbbbb".into();
         let base = Instant::now();
         for i in 0..11 {
-            push_event_at(&mut test.words[1], base + Duration::from_millis(100 * i));
+            push_event_at(&mut test, 1, base + Duration::from_millis(100 * i));
         }
         let wpm = test.live_wpm();
         assert!((wpm - 120.0).abs() < 1e-6, "expected 120 wpm, got {}", wpm);

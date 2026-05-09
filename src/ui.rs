@@ -204,8 +204,8 @@ fn truncate_with_ellipsis(s: &str, max: usize) -> String {
     out
 }
 
-/// Simulate ratatui's word-wrap to find which wrapped row holds `current_word`.
-/// Words separated by single spaces, greedy fit at `width` columns.
+// Simulate ratatui's word-wrap to find which wrapped row holds `current_word`.
+// Words separated by single spaces, greedy fit at `width` columns.
 fn current_wrap_row(words: &[TestWord], content: &Content, current_word: usize, width: u16) -> u16 {
     let width = width.max(1) as usize;
     let mut row: usize = 0;
@@ -228,13 +228,11 @@ fn current_wrap_row(words: &[TestWord], content: &Content, current_word: usize, 
     row.min(u16::MAX as usize) as u16
 }
 
-/// Append `word`'s spans (styled according to its state relative to
-/// `current_word`) plus a trailing separator space onto `out`.
-///
-/// Past/current words go through `split_word` (which allocates small pieces
-/// per status chunk); untyped words ahead of the cursor take a fast path
-/// that borrows the text slice directly out of the Content buffer with no
-/// allocation.
+// Append `word`'s spans (styled according to its state relative to
+// `current_word`) plus a trailing separator space onto `out`. Past/current
+// words go through `split_word` (which allocates small pieces per status
+// chunk); untyped words ahead of the cursor take a fast path that borrows
+// the text slice directly out of the Content buffer with no allocation.
 fn append_word_spans<'a>(
     out: &mut Vec<Span<'a>>,
     content: &'a Content,
@@ -403,8 +401,8 @@ fn control_item_w(c: &Control) -> u16 {
     KEY_W + 1 + c.desc.chars().count() as u16
 }
 
-/// Greedy pack controls into rows that each fit within `width`. Returns the
-/// number of controls per row.
+// Greedy pack `controls` into rows that fit within `width`.
+// Returns the number of controls per row.
 fn pack_control_rows(controls: &[Control], width: u16) -> Vec<usize> {
     let mut rows: Vec<usize> = Vec::new();
     let mut row_count: usize = 0;
@@ -429,8 +427,8 @@ fn pack_control_rows(controls: &[Control], width: u16) -> Vec<usize> {
     rows
 }
 
-/// Vertical rows of key art needed to render `controls` at `width`. Returns
-/// 0 if even a single tile would overflow (caller should fall back to text).
+// Vertical rows of key art needed to render `controls` at `width`.
+// Returns 0 if any tile would overflow (caller should fall back to text)
 fn control_art_rows(controls: &[Control], width: u16) -> u16 {
     if controls.is_empty() {
         return 0;
@@ -442,8 +440,8 @@ fn control_art_rows(controls: &[Control], width: u16) -> u16 {
     pack_control_rows(controls, width).len() as u16
 }
 
-/// Draw rows of key glyphs with descriptions, centered in `area`. Returns
-/// `false` if the area is too small so the caller can fall back to text.
+// Draw rows of key glyphs with descriptions, centered in `area`.
+// Returns false if the area is too small so the caller can fall back to text.
 fn render_controls(controls: &[Control], area: Rect, buf: &mut Buffer, theme: &Theme) -> bool {
     if controls.is_empty() {
         return true;
@@ -695,7 +693,12 @@ impl ThemedWidget for &results::Results {
         let wpm_sma: Vec<(f64, f64)> = wpm_sma_full.iter().step_by(step).copied().collect();
 
         // Plot a point on the SMA curve for each missed word
-        let missed = &self.timing.missed_word_event_indices;
+        let missed: std::collections::HashSet<usize> = self
+            .timing
+            .missed_word_event_indices
+            .iter()
+            .copied()
+            .collect();
         let mistake_points: Vec<(f64, f64)> = wpm_sma_full
             .iter()
             .filter(|(x, _)| {

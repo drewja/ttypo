@@ -32,10 +32,9 @@ pub struct Content {
     backing: Backing,
     pub word_ranges: Vec<Range<u32>>,
     pub lines: Vec<DisplayLine>,
-    /// Display label for the source (file path, "stdin", language name, ...).
-    /// Read via [`Content::source_label`]; intentionally not pub so consumers
-    /// like `Test::source` can override it (e.g. "practice" mode) without the
-    /// underlying Content drift confusing things.
+    // Display label for the source (file path, "stdin", language name, ...).
+    // Read via Content::source_label; not pub so consumers like Test::source
+    // can override it (e.g. "practice" mode) without underlying Content drift.
     source_label: String,
 }
 
@@ -168,9 +167,9 @@ impl Content {
     }
 }
 
-/// Zero-copy parse: tokens borrow byte ranges directly out of `text`.
-/// Returns None if any token contains control characters that the existing
-/// behavior would strip, in which case the caller falls back to `parse_owned`.
+// Zero-copy parse: tokens borrow byte ranges directly out of `text`.
+// Returns None if any token contains control characters that would otherwise
+// be stripped, in which case the caller falls back to `parse_owned`.
 fn try_parse_zero_copy(text: &str) -> Option<(Vec<Range<u32>>, Vec<DisplayLine>)> {
     let base = text.as_ptr() as usize;
     let mut word_ranges: Vec<Range<u32>> = Vec::new();
@@ -203,13 +202,11 @@ fn try_parse_zero_copy(text: &str) -> Option<(Vec<Range<u32>>, Vec<DisplayLine>)
     Some((word_ranges, lines))
 }
 
-/// Owned parse: sanitize tokens (strip control chars) and produce a fresh
-/// backing buffer whose ranges match the sanitized text.
-///
-/// The buffer only needs to hold word bytes (nothing slices newlines or
-/// indentation out of it), so we just concatenate sanitized tokens with
-/// single-space separators. `DisplayLine::indent` carries the display-side
-/// whitespace independently.
+// Owned parse: sanitize tokens (strip control chars) and produce a fresh
+// backing buffer whose ranges match the sanitized text. The buffer only
+// needs to hold word bytes (nothing slices newlines or indentation out of
+// it), so we just concatenate sanitized tokens with single-space separators.
+// DisplayLine::indent carries the display-side whitespace independently.
 fn parse_owned(text: &str) -> (String, Vec<Range<u32>>, Vec<DisplayLine>) {
     let mut buf = String::with_capacity(text.len());
     let mut word_ranges: Vec<Range<u32>> = Vec::new();
