@@ -1,5 +1,5 @@
 use crate::config::{Config, Theme};
-use crate::keyboard::{KeyboardState, KeyboardWidget, split_with_keyboard};
+use crate::keyboard::{KeyboardArt, KeyboardState, KeyboardWidget, split_with_keyboard};
 use crate::ui::ThemedWidget;
 use std::collections::HashMap;
 
@@ -214,7 +214,16 @@ pub fn run(
 ) -> io::Result<Outcome> {
     loop {
         terminal.draw(|f| {
-            let (display, kb_rect) = split_with_keyboard(f.area(), *kb_visible);
+            // Hide the keyboard automatically when the menu would otherwise
+            // be cropped. Settings rows + a one-line hint plus the card's
+            // border and padding need at least TITLE_MIN_AREA_H rows; if the
+            // keyboard would steal space below that floor, drop it for this
+            // frame without changing the user's preference.
+            let art = KeyboardArt::embedded();
+            let menu_fits_with_kb =
+                f.area().height.saturating_sub(art.height) >= TITLE_MIN_AREA_H;
+            let effective_kb_visible = *kb_visible && menu_fits_with_kb;
+            let (display, kb_rect) = split_with_keyboard(f.area(), effective_kb_visible);
             let title_widget = TitleWidget { title: &title, kb };
             f.render_widget(config.theme.apply_to(&title_widget), display);
             if let Some(r) = kb_rect {
@@ -254,7 +263,7 @@ pub fn run(
             return Ok(Outcome::Quit);
         }
 
-        // Toggle keyboard visibility on Ctrl+K (any phase).
+        // Toggle keyboard visibility on Ctrl+k (any phase).
         if let Event::Key(KeyEvent {
             code: KeyCode::Char('k'),
             kind: KeyEventKind::Press,
@@ -407,6 +416,11 @@ const BANNER_ENTER_GAP: u16 = 2;
 const COL_GAP: u16 = 4;
 const PREFERRED_CONTENT_W: u16 = 50;
 const MIN_CONTENT_W: u16 = 30;
+// Floor for the title area when the keyboard widget is visible. Card needs
+// 7 settings rows + 1 hint row of inner content, plus 4 rows of border and
+// padding (Padding::new(3, 3, 1, 1)). If the area-minus-keyboard falls below
+// this, we hide the keyboard so the menu isn't truncated.
+const TITLE_MIN_AREA_H: u16 = 12;
 
 // Width of the wide Enter key art, matching the keyboard widget's Enter
 // (`┏────────────┐┓` etc., 15 cells wide, 4 rows tall, with 12 inner cells).

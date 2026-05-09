@@ -21,7 +21,7 @@ use crossterm::{
     execute, terminal,
 };
 use rand::seq::SliceRandom;
-use ratatui::{Terminal, backend::CrosstermBackend};
+use ratatui::{Terminal, backend::CrosstermBackend, layout::Rect};
 use rust_embed::RustEmbed;
 use std::{
     ffi::OsString,
@@ -334,7 +334,19 @@ impl State {
             let (display, kb_rect) = split_with_keyboard(f.area(), show_kb);
             match self {
                 State::Test(test) => {
-                    f.render_widget(config.theme.apply_to(test), display);
+                    // File mode: let the prompt area span the full terminal
+                    // width. Language mode keeps the keyboard-width column
+                    // shared by the title and results screens.
+                    let test_area = if !test.lines().is_empty() {
+                        Rect {
+                            x: f.area().x,
+                            width: f.area().width,
+                            ..display
+                        }
+                    } else {
+                        display
+                    };
+                    f.render_widget(config.theme.apply_to(test), test_area);
                 }
                 State::Results(results) => {
                     f.render_widget(config.theme.apply_to(results), display);
@@ -424,9 +436,11 @@ fn main() -> io::Result<()> {
 
     // Persistent keyboard state lives across all phases (Title → Test →
     // Results) so the keyboard widget stays anchored at the bottom of the
-    // screen and Ctrl+K can toggle it from any phase.
+    // screen and Ctrl+k can toggle it from any phase.
     let mut kb = KeyboardState::new();
-    let mut kb_visible = true;
+    // File mode is usually a long-form text where extra vertical space matters
+    // more than the keyboard heat map, so default it to hidden.
+    let mut kb_visible = opt.contents.is_none();
 
     // Outer "session" loop: re-entered when the user hits 'm' on the results
     // screen to return to the main menu. File mode never re-enters since 'm'
@@ -595,7 +609,7 @@ fn main() -> io::Result<()> {
                 kb.note_event(ke);
             }
 
-            // Toggle the keyboard widget on Ctrl+K from any phase.
+            // Toggle the keyboard widget on Ctrl+k from any phase.
             if let Event::Key(KeyEvent {
                 code: KeyCode::Char('k'),
                 kind: KeyEventKind::Press,

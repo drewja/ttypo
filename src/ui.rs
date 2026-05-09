@@ -44,21 +44,6 @@ impl ThemedWidget for &Test {
     fn render(self, area: Rect, buf: &mut Buffer, theme: &Theme) {
         buf.set_style(area, theme.default);
 
-        // Center content on wide terminals
-        let h_margin = if area.width > 90 {
-            (area.width - 90) / 2
-        } else {
-            0
-        };
-        let padded = Layout::default()
-            .direction(Direction::Horizontal)
-            .constraints([
-                Constraint::Length(h_margin),
-                Constraint::Min(1),
-                Constraint::Length(h_margin),
-            ])
-            .split(area)[1];
-
         let prompt_constraint = Constraint::Min(6);
 
         let chunks = Layout::default()
@@ -68,7 +53,7 @@ impl ThemedWidget for &Test {
                 prompt_constraint,
                 Constraint::Length(1),
             ])
-            .split(padded);
+            .split(area);
 
         // Stats line - centered
         let (done, total) = self.progress();
@@ -79,7 +64,7 @@ impl ThemedWidget for &Test {
         let sep = Span::styled(" │ ", theme.status_timer);
 
         let stats_line = Line::from(vec![
-            Span::styled(format!("{:.0} wpm", wpm), theme.status_wpm),
+            Span::styled(format!("{:>3.0} wpm", wpm), theme.status_wpm),
             sep.clone(),
             Span::styled(format!("{:01}:{:02}", mins, secs), theme.status_timer),
             sep,
@@ -93,6 +78,19 @@ impl ThemedWidget for &Test {
             &stats_line,
             chunks[0].width,
         );
+
+        // Right-aligned hint for toggling the keyboard widget. Suppressed if
+        // it would collide with the centered stats line.
+        let kb_hint = Line::from(vec![
+            Span::styled("Ctrl+k", theme.status_wpm),
+            Span::styled(" keyboard", theme.status_timer),
+        ]);
+        let hint_width: usize = kb_hint.spans.iter().map(|s| s.width()).sum();
+        let stats_right = stats_offset as usize + stats_width;
+        if chunks[0].width as usize >= stats_right + hint_width + 2 {
+            let hint_x = chunks[0].x + chunks[0].width - hint_width as u16;
+            buf.set_line(hint_x, chunks[0].y, &kb_hint, hint_width as u16);
+        }
 
         // Progress bar - full width of the prompt area
         let progress_frac = if total > 0 {
