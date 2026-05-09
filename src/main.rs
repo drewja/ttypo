@@ -500,15 +500,9 @@ fn main() -> io::Result<()> {
 
         // Build resume context for real-file mode (excludes stdin) so we can
         // look up and save per-document progress. Hash the already-loaded
-        // bytes so we don't re-read the file.
-        //
-        // Note: when Content::from_file took the control-char fallback path,
-        // `content.as_bytes()` is the sanitized owned buffer rather than the
-        // raw file bytes. That means progress saved before the refactor
-        // (hashed against raw file bytes) will report "hash doesn't match"
-        // exactly once on resume, after which the new sanitized hash takes
-        // over. Acceptable: the worst case is a single false-positive change
-        // warning per legacy file.
+        // bytes so we don't re-read the file. When Content::from_file took
+        // the control-char fallback path, `content.as_bytes()` is the
+        // sanitized buffer, so the hash reflects sanitized bytes.
         let resume_ctx: Option<ResumeCtx> = match &opt.contents {
             Some(path) if path.as_os_str() != "-" => Some(ResumeCtx {
                 canonical_path: progress::canonicalize(path),

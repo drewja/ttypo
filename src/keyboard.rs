@@ -139,16 +139,23 @@ impl KeyboardArt {
                 }
                 continue;
             }
-            let Some(letter) = is_single_letter(label) else {
+            if let Some(letter) = is_single_letter(label) {
+                let ch = if caps != shift {
+                    letter.to_ascii_uppercase()
+                } else {
+                    letter.to_ascii_lowercase()
+                };
+                for inst in insts {
+                    rows[inst.r + 1][inst.label_col] = ch;
+                }
                 continue;
-            };
-            let ch = if caps != shift {
-                letter.to_ascii_uppercase()
-            } else {
-                letter.to_ascii_lowercase()
-            };
-            for inst in insts {
-                rows[inst.r + 1][inst.label_col] = ch;
+            }
+            let chars: Vec<char> = label.chars().collect();
+            if chars.len() == 2 && shift {
+                for inst in insts {
+                    rows[inst.r + 1][inst.label_col] = chars[1];
+                    rows[inst.r + 1][inst.label_col + 1] = ' ';
+                }
             }
         }
         rows
@@ -278,7 +285,12 @@ impl KeyboardState {
         if let Some(label) = key_to_label(ev) {
             self.press(label);
         }
-        if ev.modifiers.contains(KeyModifiers::SHIFT) {
+        // Many terminals drop the SHIFT modifier when the typed character is
+        // already a shifted glyph ('$', 'A', '!', ...), so infer shift from
+        // the character itself in addition to the modifier flag.
+        let implied_shift =
+            matches!(ev.code, KeyCode::Char(c) if char_implies_shift(c));
+        if implied_shift || ev.modifiers.contains(KeyModifiers::SHIFT) {
             self.press("Shift");
         }
         if ev.modifiers.contains(KeyModifiers::CONTROL) {
@@ -361,13 +373,41 @@ pub fn key_to_label(ev: &KeyEvent) -> Option<String> {
     match ev.code {
         KeyCode::Esc => Some("Esc".into()),
         KeyCode::Tab | KeyCode::BackTab => Some("Tab".into()),
-        KeyCode::CapsLock => Some("Caps".into()),
         KeyCode::Enter => Some("Enter".into()),
         KeyCode::Backspace => Some("Backspace".into()),
         KeyCode::Char(' ') => Some("Space".into()),
         KeyCode::Char(c) => char_to_label(c),
         _ => None,
     }
+}
+
+fn char_implies_shift(c: char) -> bool {
+    if c.is_ascii_uppercase() {
+        return true;
+    }
+    matches!(
+        c,
+        '~' | '!'
+            | '@'
+            | '#'
+            | '$'
+            | '%'
+            | '^'
+            | '&'
+            | '*'
+            | '('
+            | ')'
+            | '_'
+            | '+'
+            | '{'
+            | '}'
+            | '|'
+            | ':'
+            | '"'
+            | '<'
+            | '>'
+            | '?'
+    )
 }
 
 fn char_to_label(c: char) -> Option<String> {
@@ -430,10 +470,16 @@ impl ThemedWidget for KeyboardWidget<'_> {
         if area.width < art.width || area.height < art.height {
             return;
         }
-        let state_grid = art.apply_state(false, false, &self.overrides);
+        let base_grid = art.apply_state(false, false, &self.overrides);
+        let shift_held = self.state.is_pressed("Shift");
+        let shifted_grid = if shift_held {
+            Some(art.apply_state(false, true, &self.overrides))
+        } else {
+            None
+        };
 
         let base_style = theme.prompt_untyped;
-        for (r, row) in state_grid.iter().enumerate() {
+        for (r, row) in base_grid.iter().enumerate() {
             let s: String = row.iter().collect();
             buf.set_string(area.x, area.y + r as u16, &s, base_style);
         }
@@ -449,6 +495,10 @@ impl ThemedWidget for KeyboardWidget<'_> {
             let Some(insts) = art.instances.get(label) else {
                 continue;
             };
+            let press_grid = match (&shifted_grid, label.as_str()) {
+                (Some(g), l) if l != "Shift" => g,
+                _ => &base_grid,
+            };
             let is_wrong = self.state.wrong.get(label).is_some_and(|d| *d > now);
             let (corner_s, label_s) = if is_wrong {
                 (wrong_style, wrong_style)
@@ -457,12 +507,12 @@ impl ThemedWidget for KeyboardWidget<'_> {
             };
             for inst in insts {
                 for (br, bc) in corner_cells(inst) {
-                    let ch = state_grid[br][bc];
+                    let ch = press_grid[br][bc];
                     let x = area.x + bc as u16;
                     let y = area.y + br as u16;
                     buf.set_string(x, y, ch.to_string(), corner_s);
                 }
-                for cell in compute_press_cells(&state_grid, inst) {
+                for cell in compute_press_cells(press_grid, inst) {
                     let x = area.x + cell.c as u16;
                     let y = area.y + cell.r as u16;
                     let style = if cell.is_label { label_s } else { base_style };
@@ -523,14 +573,15 @@ mod tests {
         let q = &art.instances["Q"][0];
         assert_eq!(g[q.r + 1][q.label_col], 'q');
         let one = &art.instances["1!"][0];
+        // At rest, both chars of a pair render exactly as in the art.
         assert_eq!(g[one.r + 1][one.label_col], '1');
         assert_eq!(g[one.r + 1][one.label_col + 1], '!');
 
         let g_shift = art.apply_state(false, true, &no_overrides);
         assert_eq!(g_shift[q.r + 1][q.label_col], 'Q');
-        // Pairs render both glyphs as in the art, regardless of shift state.
-        assert_eq!(g_shift[one.r + 1][one.label_col], '1');
-        assert_eq!(g_shift[one.r + 1][one.label_col + 1], '!');
+        // Shift held: only the shifted glyph is shown.
+        assert_eq!(g_shift[one.r + 1][one.label_col], '!');
+        assert_eq!(g_shift[one.r + 1][one.label_col + 1], ' ');
     }
 
     #[test]
