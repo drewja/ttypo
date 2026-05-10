@@ -15,6 +15,7 @@
         background: #0c0c0c;
         color: #d8d8d8;
         font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 16px;
         height: 100%;
       }
       body {
@@ -22,9 +23,18 @@
         align-items: stretch;
         justify-content: stretch;
       }
+      /* ratzilla's DomBackend picks cells assuming 10px wide x 20px tall, but
+         emits <pre style="height: 15px;"> with each cell as
+         <span style="display: inline-block; width: 1ch;">. Force the row box
+         to 20px and pin every cell to exactly 10px so the rendered grid lines
+         up with the column/row count ratzilla picked from window.innerWidth. */
       pre {
-        margin: 0;
-        line-height: 1.1;
+        margin: 0 !important;
+        height: 20px !important;
+        line-height: 20px !important;
+      }
+      pre > span {
+        width: 10px !important;
       }
     </style>
   </head>
