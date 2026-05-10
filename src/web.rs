@@ -93,7 +93,7 @@ impl Session {
             sudden_death: false,
             no_backtrack: false,
             no_backspace: false,
-            ascii: false,
+            ascii: true,
         };
         let title = build_title(&settings, &languages);
         Self {
