@@ -46,6 +46,20 @@ Books in the public domain can be found on project [gutenberg](https://www.guten
 cargo install ttypo
 ```
 
+## web version
+
+A browser build is hosted at [drewja.github.io/ttypo](https://drewja.github.io/ttypo/).
+Language mode only (no file/stdin input, no saved progress).
+Use your browser's zoom (Ctrl/Cmd +) to enlarge the terminal grid.
+
+To build it locally:
+
+```bash
+rustup target add wasm32-unknown-unknown
+cargo install trunk
+trunk serve  # http://localhost:8080
+```
+
 ## cli usage
 
 ```

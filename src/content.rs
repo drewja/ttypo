@@ -7,13 +7,18 @@
 
 use crate::test::DisplayLine;
 
+#[cfg(not(target_arch = "wasm32"))]
 use memmap2::Mmap;
+#[cfg(not(target_arch = "wasm32"))]
 use std::fs::File;
+#[cfg(not(target_arch = "wasm32"))]
 use std::io;
 use std::ops::Range;
+#[cfg(not(target_arch = "wasm32"))]
 use std::path::Path;
 
 enum Backing {
+    #[cfg(not(target_arch = "wasm32"))]
     Mmap(Mmap),
     Owned(String),
 }
@@ -21,6 +26,7 @@ enum Backing {
 impl std::fmt::Debug for Backing {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            #[cfg(not(target_arch = "wasm32"))]
             Backing::Mmap(m) => f.debug_tuple("Mmap").field(&m.len()).finish(),
             Backing::Owned(s) => f.debug_tuple("Owned").field(&s.len()).finish(),
         }
@@ -47,6 +53,7 @@ impl Content {
             // process rewrites it with non-UTF-8 bytes between validation
             // and this read, the unchecked conversion is unsound. For a
             // local typing-test tool we accept that risk.
+            #[cfg(not(target_arch = "wasm32"))]
             Backing::Mmap(m) => unsafe { std::str::from_utf8_unchecked(&m[..]) },
             Backing::Owned(s) => s.as_str(),
         }
@@ -54,6 +61,7 @@ impl Content {
 
     pub fn as_bytes(&self) -> &[u8] {
         match &self.backing {
+            #[cfg(not(target_arch = "wasm32"))]
             Backing::Mmap(m) => &m[..],
             Backing::Owned(s) => s.as_bytes(),
         }
@@ -79,6 +87,7 @@ impl Content {
 
     /// Load a file via mmap. Falls back to an owned sanitized copy if tokens
     /// contain control characters that must be stripped.
+    #[cfg(not(target_arch = "wasm32"))]
     pub fn from_file(path: &Path, source_label: String) -> io::Result<Self> {
         let file = File::open(path)?;
         let len = file.metadata()?.len();

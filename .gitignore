@@ -1,6 +1,10 @@
 # Rust
 target/
 
+# Trunk (wasm build output)
+dist/
+.trunk/
+
 # Nix
 result
 

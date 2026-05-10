@@ -11,19 +11,30 @@ keywords = ["typing", "terminal", "tui", "practice", "touch-type"]
 categories = ["command-line-utilities", "games"]
 edition = "2024"
 
+[features]
+# Marker feature gating the native CLI binary. Enabled by default on every
+# `cargo build` / `cargo install`, disabled by trunk via
+# `data-no-default-features` so the wasm build only compiles the cdylib.
+default = ["native_bin"]
+native_bin = []
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[[bin]]
+name = "ttypo"
+path = "src/main.rs"
+required-features = ["native_bin"]
+
 [dependencies]
-clap = { version = "^4.5", features = ["derive"] }
-clap_complete = "^4.5"
-dirs = "^6.0"
-crossterm = "^0.29"
-memmap2 = "^0.9"
 rust-embed = "^8.2"
 sha2 = "^0.10"
 toml = "^1.0"
 
 [dependencies.ratatui]
 version = "^0.30"
-features = ["crossterm"]
+default-features = false
 
 [dependencies.rand]
 version = "^0.10"
@@ -31,6 +42,21 @@ version = "^0.10"
 [dependencies.serde]
 version = "^1.0"
 features = ["derive"]
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+clap = { version = "^4.5", features = ["derive"] }
+clap_complete = "^4.5"
+dirs = "^6.0"
+crossterm = "^0.29"
+memmap2 = "^0.9"
+ratatui = { version = "^0.30", features = ["crossterm"] }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+ratzilla = "0.3"
+web-time = "1"
+wasm-bindgen = "0.2"
+console_error_panic_hook = "0.1"
+getrandom = { version = "0.4", features = ["wasm_js"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
@@ -43,4 +69,3 @@ pre-release-replacements = [
     { file = "README.md", search = "v\\d+\\.\\d+\\.\\d+", replace = "v{{version}}", min = 1, max = 1 },
 ]
 pre-release-commit-message = "release {{version}}"
-

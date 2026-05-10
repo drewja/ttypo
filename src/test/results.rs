@@ -1,6 +1,6 @@
 use super::{Test, is_missed_word_event};
 
-use crossterm::event::KeyEvent;
+use crate::key::KeyEvent;
 use std::collections::HashMap;
 use std::{cmp, fmt};
 
@@ -163,7 +163,7 @@ fn calc_accuracy(events: &[&super::TestEvent]) -> AccuracyData {
             }
         }
 
-        if let (Some(target), crossterm::event::KeyCode::Char(pressed)) =
+        if let (Some(target), crate::key::KeyCode::Char(pressed)) =
             (event.target, event.key.code)
         {
             let bucket = acc

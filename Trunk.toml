@@ -1,0 +1,6 @@
+[build]
+target = "index.html"
+public_url = "/ttypo/"
+release = true
+# Skip the native CLI bin (gated by the `native_bin` default feature).
+no_default_features = true

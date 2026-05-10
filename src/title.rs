@@ -1,24 +1,30 @@
-use crate::config::{Config, Theme};
+use crate::config::Theme;
+#[cfg(not(target_arch = "wasm32"))]
+use crate::config::Config;
 use crate::keyboard::{KeyboardArt, KeyboardState, KeyboardWidget, split_with_keyboard};
 use crate::ui::ThemedWidget;
 use std::collections::HashMap;
 
-use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crate::key::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+#[cfg(not(target_arch = "wasm32"))]
+use crossterm::event::{self, Event};
 use ratatui::{
-    Terminal,
-    backend::CrosstermBackend,
     buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph, Widget},
 };
-use std::{
-    io,
-    num::NonZeroUsize,
-    time::{Duration, Instant},
-};
+#[cfg(not(target_arch = "wasm32"))]
+use ratatui::{Terminal, backend::CrosstermBackend};
+use std::num::NonZeroUsize;
+#[cfg(not(target_arch = "wasm32"))]
+use std::io;
 
+#[cfg(not(target_arch = "wasm32"))]
+use crate::time::{Duration, Instant};
+
+#[cfg(not(target_arch = "wasm32"))]
 const POLL_IDLE: Duration = Duration::from_secs(3600);
 
 const WORD_PRESETS: [usize; 6] = [10, 25, 50, 100, 200, 500];
@@ -88,8 +94,9 @@ pub struct Title {
     picker_cursor: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Outcome {
-    Start(Title),
+    Start,
     Quit,
 }
 
@@ -205,37 +212,156 @@ pub struct TitleWidget<'a> {
     pub kb: &'a KeyboardState,
 }
 
+impl Title {
+    /// Render the title screen (and optional keyboard hint area) into the
+    /// provided frame. Used by both the native event loop and the wasm
+    /// driver.
+    pub fn render(
+        &self,
+        frame: &mut ratatui::Frame,
+        theme: &Theme,
+        kb: &KeyboardState,
+        kb_visible: bool,
+    ) {
+        // Hide the keyboard automatically when the menu would otherwise be
+        // cropped. Settings rows + a one-line hint plus the card's border
+        // and padding need at least TITLE_MIN_AREA_H rows; if the keyboard
+        // would steal space below that floor, drop it for this frame
+        // without changing the user's preference.
+        let art = KeyboardArt::embedded();
+        let area = frame.area();
+        let menu_fits_with_kb = area.height.saturating_sub(art.height) >= TITLE_MIN_AREA_H;
+        let effective_kb_visible = kb_visible && menu_fits_with_kb;
+        let (display, kb_rect) = split_with_keyboard(area, effective_kb_visible);
+        let title_widget = TitleWidget { title: self, kb };
+        frame.render_widget(theme.apply_to(&title_widget), display);
+        if let Some(r) = kb_rect {
+            let overrides = self.kb_label_overrides();
+            frame.render_widget(
+                theme.apply_to(KeyboardWidget::new(kb).with_overrides(overrides)),
+                r,
+            );
+        }
+    }
+
+    /// Apply a single key event to the title state. Returns `Some(outcome)`
+    /// when the screen should exit (Start or Quit), `None` to remain on the
+    /// title screen.
+    pub fn handle_key(&mut self, ev: &KeyEvent, kb_visible: &mut bool) -> Option<Outcome> {
+        if ev.kind != KeyEventKind::Press {
+            return None;
+        }
+
+        // Ctrl+C quits from any phase.
+        if ev.code == KeyCode::Char('c') && ev.modifiers.contains(KeyModifiers::CONTROL) {
+            return Some(Outcome::Quit);
+        }
+        // Ctrl+K toggles keyboard visibility from any phase.
+        if ev.code == KeyCode::Char('k') && ev.modifiers.contains(KeyModifiers::CONTROL) {
+            *kb_visible = !*kb_visible;
+            return None;
+        }
+
+        let code = ev.code;
+        let modifiers = ev.modifiers;
+
+        match self.mode {
+            Mode::Menu => match code {
+                KeyCode::Esc | KeyCode::Char('q') => return Some(Outcome::Quit),
+                KeyCode::Up | KeyCode::Char('k') => self.cursor = self.cursor.prev(),
+                KeyCode::Down | KeyCode::Char('j') => self.cursor = self.cursor.next(),
+                // Shift+arrow or uppercase H/L: fine-tune words by ±1.
+                KeyCode::Left if modifiers.contains(KeyModifiers::SHIFT) => {
+                    if self.cursor == Cursor::Words {
+                        self.adjust_words(-1);
+                    }
+                }
+                KeyCode::Right if modifiers.contains(KeyModifiers::SHIFT) => {
+                    if self.cursor == Cursor::Words {
+                        self.adjust_words(1);
+                    }
+                }
+                KeyCode::Char('H') => {
+                    if self.cursor == Cursor::Words {
+                        self.adjust_words(-1);
+                    }
+                }
+                KeyCode::Char('L') => {
+                    if self.cursor == Cursor::Words {
+                        self.adjust_words(1);
+                    }
+                }
+                // Plain arrow / h / l: language cycle or words preset cycle.
+                KeyCode::Left | KeyCode::Char('h') => match self.cursor {
+                    Cursor::Language => self.cycle_language(-1),
+                    Cursor::Words => self.prev_word_preset(),
+                    Cursor::SuddenDeath
+                    | Cursor::NoBacktrack
+                    | Cursor::NoBackspace
+                    | Cursor::Ascii => self.toggle_current(),
+                },
+                KeyCode::Right | KeyCode::Char('l') => match self.cursor {
+                    Cursor::Language => self.cycle_language(1),
+                    Cursor::Words => self.next_word_preset(),
+                    Cursor::SuddenDeath
+                    | Cursor::NoBacktrack
+                    | Cursor::NoBackspace
+                    | Cursor::Ascii => self.toggle_current(),
+                },
+                KeyCode::Char(' ') => self.toggle_current(),
+                KeyCode::Enter => match self.cursor {
+                    Cursor::Language => self.open_picker(),
+                    _ => return Some(Outcome::Start),
+                },
+                _ => {}
+            },
+            Mode::LanguagePicker => {
+                let count = self.filtered_count();
+                match code {
+                    KeyCode::Esc => self.mode = Mode::Menu,
+                    KeyCode::Enter => self.commit_picker(),
+                    KeyCode::Up | KeyCode::Char('K') => {
+                        if self.picker_cursor > 0 {
+                            self.picker_cursor -= 1;
+                        }
+                    }
+                    KeyCode::Down | KeyCode::Char('J') => {
+                        if self.picker_cursor + 1 < count {
+                            self.picker_cursor += 1;
+                        }
+                    }
+                    KeyCode::PageUp => {
+                        self.picker_cursor = self.picker_cursor.saturating_sub(10);
+                    }
+                    KeyCode::PageDown => {
+                        self.picker_cursor = (self.picker_cursor + 10).min(count.saturating_sub(1));
+                    }
+                    KeyCode::Backspace => {
+                        self.picker_filter.pop();
+                        self.picker_cursor = 0;
+                    }
+                    KeyCode::Char(c) if !modifiers.contains(KeyModifiers::CONTROL) => {
+                        self.picker_filter.push(c);
+                        self.picker_cursor = 0;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        None
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
 pub fn run(
     terminal: &mut Terminal<CrosstermBackend<io::Stdout>>,
     config: &Config,
-    mut title: Title,
+    title: &mut Title,
     kb: &mut KeyboardState,
     kb_visible: &mut bool,
 ) -> io::Result<Outcome> {
     loop {
-        terminal.draw(|f| {
-            // Hide the keyboard automatically when the menu would otherwise
-            // be cropped. Settings rows + a one-line hint plus the card's
-            // border and padding need at least TITLE_MIN_AREA_H rows; if the
-            // keyboard would steal space below that floor, drop it for this
-            // frame without changing the user's preference.
-            let art = KeyboardArt::embedded();
-            let menu_fits_with_kb =
-                f.area().height.saturating_sub(art.height) >= TITLE_MIN_AREA_H;
-            let effective_kb_visible = *kb_visible && menu_fits_with_kb;
-            let (display, kb_rect) = split_with_keyboard(f.area(), effective_kb_visible);
-            let title_widget = TitleWidget { title: &title, kb };
-            f.render_widget(config.theme.apply_to(&title_widget), display);
-            if let Some(r) = kb_rect {
-                let overrides = title.kb_label_overrides();
-                f.render_widget(
-                    config
-                        .theme
-                        .apply_to(KeyboardWidget::new(kb).with_overrides(overrides)),
-                    r,
-                );
-            }
-        })?;
+        terminal.draw(|f| title.render(f, &config.theme, kb, *kb_visible))?;
 
         let timeout = kb
             .next_deadline()
@@ -246,127 +372,12 @@ pub fn run(
             continue;
         }
         let event = event::read()?;
-
-        if let Event::Key(ke) = &event
-            && ke.kind == KeyEventKind::Press
-        {
-            kb.note_event(ke);
-        }
-
-        if let Event::Key(KeyEvent {
-            code: KeyCode::Char('c'),
-            kind: KeyEventKind::Press,
-            modifiers: KeyModifiers::CONTROL,
-            ..
-        }) = event
-        {
-            return Ok(Outcome::Quit);
-        }
-
-        // Toggle keyboard visibility on Ctrl+k (any phase).
-        if let Event::Key(KeyEvent {
-            code: KeyCode::Char('k'),
-            kind: KeyEventKind::Press,
-            modifiers: KeyModifiers::CONTROL,
-            ..
-        }) = event
-        {
-            *kb_visible = !*kb_visible;
-            continue;
-        }
-
-        let Event::Key(KeyEvent {
-            code,
-            kind: KeyEventKind::Press,
-            modifiers,
-            ..
-        }) = event
-        else {
-            continue;
-        };
-
-        match title.mode {
-            Mode::Menu => match code {
-                KeyCode::Esc | KeyCode::Char('q') => return Ok(Outcome::Quit),
-                KeyCode::Up | KeyCode::Char('k') => title.cursor = title.cursor.prev(),
-                KeyCode::Down | KeyCode::Char('j') => title.cursor = title.cursor.next(),
-                // Shift+arrow or uppercase H/L: fine-tune words by ±1.
-                KeyCode::Left if modifiers.contains(KeyModifiers::SHIFT) => {
-                    if title.cursor == Cursor::Words {
-                        title.adjust_words(-1);
-                    }
-                }
-                KeyCode::Right if modifiers.contains(KeyModifiers::SHIFT) => {
-                    if title.cursor == Cursor::Words {
-                        title.adjust_words(1);
-                    }
-                }
-                KeyCode::Char('H') => {
-                    if title.cursor == Cursor::Words {
-                        title.adjust_words(-1);
-                    }
-                }
-                KeyCode::Char('L') => {
-                    if title.cursor == Cursor::Words {
-                        title.adjust_words(1);
-                    }
-                }
-                // Plain arrow / h / l: language cycle or words preset cycle.
-                KeyCode::Left | KeyCode::Char('h') => match title.cursor {
-                    Cursor::Language => title.cycle_language(-1),
-                    Cursor::Words => title.prev_word_preset(),
-                    Cursor::SuddenDeath
-                    | Cursor::NoBacktrack
-                    | Cursor::NoBackspace
-                    | Cursor::Ascii => title.toggle_current(),
-                },
-                KeyCode::Right | KeyCode::Char('l') => match title.cursor {
-                    Cursor::Language => title.cycle_language(1),
-                    Cursor::Words => title.next_word_preset(),
-                    Cursor::SuddenDeath
-                    | Cursor::NoBacktrack
-                    | Cursor::NoBackspace
-                    | Cursor::Ascii => title.toggle_current(),
-                },
-                KeyCode::Char(' ') => title.toggle_current(),
-                KeyCode::Enter => match title.cursor {
-                    Cursor::Language => title.open_picker(),
-                    _ => return Ok(Outcome::Start(title)),
-                },
-                _ => {}
-            },
-            Mode::LanguagePicker => {
-                let count = title.filtered_count();
-                match code {
-                    KeyCode::Esc => title.mode = Mode::Menu,
-                    KeyCode::Enter => title.commit_picker(),
-                    KeyCode::Up | KeyCode::Char('K') => {
-                        if title.picker_cursor > 0 {
-                            title.picker_cursor -= 1;
-                        }
-                    }
-                    KeyCode::Down | KeyCode::Char('J') => {
-                        if title.picker_cursor + 1 < count {
-                            title.picker_cursor += 1;
-                        }
-                    }
-                    KeyCode::PageUp => {
-                        title.picker_cursor = title.picker_cursor.saturating_sub(10);
-                    }
-                    KeyCode::PageDown => {
-                        title.picker_cursor =
-                            (title.picker_cursor + 10).min(count.saturating_sub(1));
-                    }
-                    KeyCode::Backspace => {
-                        title.picker_filter.pop();
-                        title.picker_cursor = 0;
-                    }
-                    KeyCode::Char(c) if !modifiers.contains(KeyModifiers::CONTROL) => {
-                        title.picker_filter.push(c);
-                        title.picker_cursor = 0;
-                    }
-                    _ => {}
-                }
+        if let Event::Key(ke) = &event {
+            if ke.kind == KeyEventKind::Press {
+                kb.note_event(ke);
+            }
+            if let Some(outcome) = title.handle_key(ke, kb_visible) {
+                return Ok(outcome);
             }
         }
     }

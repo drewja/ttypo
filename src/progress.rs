@@ -12,7 +12,7 @@ use std::io;
 #[cfg(test)]
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use crate::time::{SystemTime, UNIX_EPOCH};
 
 const SCHEMA_VERSION: u32 = 1;
 const FILENAME: &str = "progress.toml";

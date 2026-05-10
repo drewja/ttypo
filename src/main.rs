@@ -1,9 +1,18 @@
+// The native CLI binary. The browser entry point lives in src/lib.rs and is
+// compiled separately as a cdylib by trunk/wasm-pack. Build the wasm target
+// with `cargo build --lib --target wasm32-unknown-unknown` (or via `trunk
+// build`); building this bin for wasm32 is not supported.
+#![cfg(not(target_arch = "wasm32"))]
+
 mod config;
 mod content;
+mod key;
 mod keyboard;
 mod progress;
+mod resources;
 mod resume_prompt;
 mod test;
+mod time;
 mod title;
 mod ui;
 
@@ -22,7 +31,6 @@ use crossterm::{
 };
 use rand::seq::SliceRandom;
 use ratatui::{Terminal, backend::CrosstermBackend, layout::Rect};
-use rust_embed::RustEmbed;
 use std::{
     ffi::OsString,
     fs,
@@ -31,12 +39,11 @@ use std::{
     path::PathBuf,
     str,
     sync::Arc,
-    time::{Duration, Instant},
 };
 
-#[derive(RustEmbed)]
-#[folder = "resources/runtime"]
-struct Resources;
+use crate::time::{Duration, Instant};
+
+use crate::resources::Resources;
 
 #[derive(Debug, Parser)]
 #[command(about, version)]
@@ -448,7 +455,7 @@ fn main() -> io::Result<()> {
     'outer: loop {
         let is_file_mode = opt.contents.is_some();
         if !is_file_mode {
-            let t = title::Title::new(
+            let mut t = title::Title::new(
                 opt.language
                     .clone()
                     .unwrap_or_else(|| config.default_language.clone()),
@@ -459,9 +466,9 @@ fn main() -> io::Result<()> {
                 opt.ascii,
                 opt.languages_sorted(),
             );
-            match title::run(&mut terminal, &config, t, &mut kb, &mut kb_visible)? {
+            match title::run(&mut terminal, &config, &mut t, &mut kb, &mut kb_visible)? {
                 title::Outcome::Quit => break 'outer,
-                title::Outcome::Start(t) => {
+                title::Outcome::Start => {
                     opt.language = Some(t.language);
                     opt.words = t.words;
                     opt.sudden_death = t.sudden_death;
