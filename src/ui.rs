@@ -80,16 +80,20 @@ impl ThemedWidget for &Test {
         );
 
         // Right-aligned hint for toggling the keyboard widget. Suppressed if
-        // it would collide with the centered stats line.
-        let kb_hint = Line::from(vec![
-            Span::styled("Ctrl+k", theme.status_wpm),
-            Span::styled(" keyboard", theme.status_timer),
-        ]);
-        let hint_width: usize = kb_hint.spans.iter().map(|s| s.width()).sum();
-        let stats_right = stats_offset as usize + stats_width;
-        if chunks[0].width as usize >= stats_right + hint_width + 2 {
-            let hint_x = chunks[0].x + chunks[0].width - hint_width as u16;
-            buf.set_line(hint_x, chunks[0].y, &kb_hint, hint_width as u16);
+        // it would collide with the centered stats line. Browsers swallow
+        // Ctrl+K, so the WASM build has no working toggle to advertise.
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let kb_hint = Line::from(vec![
+                Span::styled("Ctrl+k", theme.status_wpm),
+                Span::styled(" keyboard", theme.status_timer),
+            ]);
+            let hint_width: usize = kb_hint.spans.iter().map(|s| s.width()).sum();
+            let stats_right = stats_offset as usize + stats_width;
+            if chunks[0].width as usize >= stats_right + hint_width + 2 {
+                let hint_x = chunks[0].x + chunks[0].width - hint_width as u16;
+                buf.set_line(hint_x, chunks[0].y, &kb_hint, hint_width as u16);
+            }
         }
 
         // Progress bar - full width of the prompt area
