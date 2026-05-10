@@ -148,7 +148,7 @@ impl Session {
                     return;
                 }
                 match ev.code {
-                    KeyCode::Esc | KeyCode::Char('q') => {
+                    KeyCode::Esc | KeyCode::Char('m') | KeyCode::Char('M') => {
                         let title = build_title(&self.settings, &self.languages);
                         self.screen = Screen::Title(title);
                     }

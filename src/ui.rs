@@ -495,11 +495,13 @@ impl ThemedWidget for &results::Results {
     fn render(self, area: Rect, buf: &mut Buffer, theme: &Theme) {
         buf.set_style(area, theme.default);
 
-        let mut controls: Vec<Control> = vec![Control {
+        let mut controls: Vec<Control> = Vec::new();
+        #[cfg(not(target_arch = "wasm32"))]
+        controls.push(Control {
             label: 'Q',
             desc: "quit",
             right_style: false,
-        }];
+        });
         if self.can_continue {
             controls.push(Control {
                 label: 'C',
