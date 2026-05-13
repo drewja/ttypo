@@ -1,20 +1,42 @@
 name: Publish to AUR
 
+# `release: published` won't fire when release.yml creates the release with
+# GITHUB_TOKEN (GH guards against workflow-triggered loops). Listen for
+# release.yml itself completing instead. workflow_dispatch is an escape
+# hatch for manual reruns.
 on:
-  release:
-    types: [published]
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish (without v prefix), e.g. 0.1.21'
+        required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   ttypo:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract version from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - name: Extract version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ inputs.version }}" >> "$GITHUB_ENV"
+          else
+            TAG="${{ github.event.workflow_run.head_branch }}"
+            echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          fi
 
       - name: Bump pkgver
         run: sed -i "s/^pkgver=.*/pkgver=$VERSION/" packaging/aur/ttypo/PKGBUILD
@@ -31,12 +53,23 @@ jobs:
           test: true
 
   ttypo-bin:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       startsWith(github.event.workflow_run.head_branch, 'v'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
-      - name: Extract version from tag
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - name: Extract version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "VERSION=${{ inputs.version }}" >> "$GITHUB_ENV"
+          else
+            TAG="${{ github.event.workflow_run.head_branch }}"
+            echo "VERSION=${TAG#v}" >> "$GITHUB_ENV"
+          fi
 
       - name: Bump pkgver
         run: sed -i "s/^pkgver=.*/pkgver=$VERSION/" packaging/aur/ttypo-bin/PKGBUILD
