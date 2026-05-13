@@ -271,25 +271,27 @@ impl Title {
                 KeyCode::Up | KeyCode::Char('k') => self.cursor = self.cursor.prev(),
                 KeyCode::Down | KeyCode::Char('j') => self.cursor = self.cursor.next(),
                 // Shift+arrow or uppercase H/L: fine-tune words by ±1.
+                // SHIFT arms must consume the event even when the cursor isn't
+                // Words, so other arms don't fire on Shift+Left/Right; #[allow]
+                // because collapsing the inner check into a guard would let
+                // the unmodified Left/Right arms run instead.
+                #[allow(clippy::collapsible_match)]
                 KeyCode::Left if modifiers.contains(KeyModifiers::SHIFT) => {
                     if self.cursor == Cursor::Words {
                         self.adjust_words(-1);
                     }
                 }
+                #[allow(clippy::collapsible_match)]
                 KeyCode::Right if modifiers.contains(KeyModifiers::SHIFT) => {
                     if self.cursor == Cursor::Words {
                         self.adjust_words(1);
                     }
                 }
-                KeyCode::Char('H') => {
-                    if self.cursor == Cursor::Words {
-                        self.adjust_words(-1);
-                    }
+                KeyCode::Char('H') if self.cursor == Cursor::Words => {
+                    self.adjust_words(-1);
                 }
-                KeyCode::Char('L') => {
-                    if self.cursor == Cursor::Words {
-                        self.adjust_words(1);
-                    }
+                KeyCode::Char('L') if self.cursor == Cursor::Words => {
+                    self.adjust_words(1);
                 }
                 // Plain arrow / h / l: language cycle or words preset cycle.
                 KeyCode::Left | KeyCode::Char('h') => match self.cursor {
@@ -320,15 +322,11 @@ impl Title {
                 match code {
                     KeyCode::Esc => self.mode = Mode::Menu,
                     KeyCode::Enter => self.commit_picker(),
-                    KeyCode::Up | KeyCode::Char('K') => {
-                        if self.picker_cursor > 0 {
-                            self.picker_cursor -= 1;
-                        }
+                    KeyCode::Up | KeyCode::Char('K') if self.picker_cursor > 0 => {
+                        self.picker_cursor -= 1;
                     }
-                    KeyCode::Down | KeyCode::Char('J') => {
-                        if self.picker_cursor + 1 < count {
-                            self.picker_cursor += 1;
-                        }
+                    KeyCode::Down | KeyCode::Char('J') if self.picker_cursor + 1 < count => {
+                        self.picker_cursor += 1;
                     }
                     KeyCode::PageUp => {
                         self.picker_cursor = self.picker_cursor.saturating_sub(10);

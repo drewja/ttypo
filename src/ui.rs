@@ -689,11 +689,11 @@ impl ThemedWidget for &results::Results {
             .collect();
 
         // Downsample to at most chart_width points
-        let step = if chart_width > 0 {
-            (wpm_sma_full.len() / chart_width).max(1)
-        } else {
-            1
-        };
+        let step = wpm_sma_full
+            .len()
+            .checked_div(chart_width)
+            .unwrap_or(1)
+            .max(1);
         let wpm_sma: Vec<(f64, f64)> = wpm_sma_full.iter().step_by(step).copied().collect();
 
         // Plot a point on the SMA curve for each missed word
