@@ -248,8 +248,7 @@ fn build_test(settings: &Settings) -> Option<Test> {
         .data
         .into_owned();
     let mut rng = rand::rng();
-    let mut language_words: Vec<&str> =
-        std::str::from_utf8(&bytes).ok()?.lines().collect();
+    let mut language_words: Vec<&str> = std::str::from_utf8(&bytes).ok()?.lines().collect();
     language_words.shuffle(&mut rng);
     let mut words: Vec<String> = language_words
         .into_iter()

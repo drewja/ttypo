@@ -1,6 +1,6 @@
-use crate::config::Theme;
 #[cfg(not(target_arch = "wasm32"))]
 use crate::config::Config;
+use crate::config::Theme;
 use crate::keyboard::{KeyboardArt, KeyboardState, KeyboardWidget, split_with_keyboard};
 use crate::ui::ThemedWidget;
 use std::collections::HashMap;
@@ -8,6 +8,8 @@ use std::collections::HashMap;
 use crate::key::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 #[cfg(not(target_arch = "wasm32"))]
 use crossterm::event::{self, Event};
+#[cfg(not(target_arch = "wasm32"))]
+use ratatui::{Terminal, backend::CrosstermBackend};
 use ratatui::{
     buffer::Buffer,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -16,10 +18,8 @@ use ratatui::{
     widgets::{Block, Borders, Padding, Paragraph, Widget},
 };
 #[cfg(not(target_arch = "wasm32"))]
-use ratatui::{Terminal, backend::CrosstermBackend};
-use std::num::NonZeroUsize;
-#[cfg(not(target_arch = "wasm32"))]
 use std::io;
+use std::num::NonZeroUsize;
 
 #[cfg(not(target_arch = "wasm32"))]
 use crate::time::{Duration, Instant};

@@ -3,11 +3,11 @@ pub mod results;
 use crate::content::Content;
 
 use crate::key::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use crate::time::Instant;
 use std::collections::VecDeque;
 use std::fmt;
 use std::ops::Range;
 use std::sync::Arc;
-use crate::time::Instant;
 
 // Number of intervals (i.e. WPM_WINDOW + 1 event timestamps) used by the
 // rolling live-WPM calculation.
@@ -384,8 +384,8 @@ pub(crate) fn layout_content(buf: &str) -> Arc<Content> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::KeyEventState;
     use crate::time::Duration;
+    use crossterm::event::KeyEventState;
 
     fn make_test(words: &[&str], lines: Vec<DisplayLine>, ascii: bool) -> Test {
         debug_assert!(

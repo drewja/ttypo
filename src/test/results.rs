@@ -163,9 +163,7 @@ fn calc_accuracy(events: &[&super::TestEvent]) -> AccuracyData {
             }
         }
 
-        if let (Some(target), crate::key::KeyCode::Char(pressed)) =
-            (event.target, event.key.code)
-        {
+        if let (Some(target), crate::key::KeyCode::Char(pressed)) = (event.target, event.key.code) {
             let bucket = acc
                 .per_key
                 .entry(target)

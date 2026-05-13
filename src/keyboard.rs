@@ -1,6 +1,6 @@
+use crate::time::{Duration, Instant};
 use std::collections::HashMap;
 use std::sync::OnceLock;
-use crate::time::{Duration, Instant};
 
 use crate::key::{KeyCode, KeyEvent, KeyModifiers};
 use ratatui::{buffer::Buffer, layout::Rect};
@@ -288,8 +288,7 @@ impl KeyboardState {
         // Many terminals drop the SHIFT modifier when the typed character is
         // already a shifted glyph ('$', 'A', '!', ...), so infer shift from
         // the character itself in addition to the modifier flag.
-        let implied_shift =
-            matches!(ev.code, KeyCode::Char(c) if char_implies_shift(c));
+        let implied_shift = matches!(ev.code, KeyCode::Char(c) if char_implies_shift(c));
         if implied_shift || ev.modifiers.contains(KeyModifiers::SHIFT) {
             self.press("Shift");
         }

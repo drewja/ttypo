@@ -4,6 +4,7 @@
 //! keyed by the canonicalized absolute path of the source file and carries a
 //! SHA-256 content hash so stale or modified files can be detected on resume.
 
+use crate::time::{SystemTime, UNIX_EPOCH};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
@@ -12,7 +13,6 @@ use std::io;
 #[cfg(test)]
 use std::io::Read;
 use std::path::{Path, PathBuf};
-use crate::time::{SystemTime, UNIX_EPOCH};
 
 const SCHEMA_VERSION: u32 = 1;
 const FILENAME: &str = "progress.toml";
