@@ -1,0 +1,53 @@
+name: Publish to AUR
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  ttypo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Bump pkgver
+        run: sed -i "s/^pkgver=.*/pkgver=$VERSION/" packaging/aur/ttypo/PKGBUILD
+
+      - uses: KSXGitHub/github-actions-deploy-aur@v3
+        with:
+          pkgname: ttypo
+          pkgbuild: packaging/aur/ttypo/PKGBUILD
+          commit_username: Andrew Arendt
+          commit_email: andrewarendt@gmail.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "ttypo ${{ env.VERSION }}"
+          updpkgsums: true
+          test: true
+
+  ttypo-bin:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Bump pkgver
+        run: sed -i "s/^pkgver=.*/pkgver=$VERSION/" packaging/aur/ttypo-bin/PKGBUILD
+
+      - uses: KSXGitHub/github-actions-deploy-aur@v3
+        with:
+          pkgname: ttypo-bin
+          pkgbuild: packaging/aur/ttypo-bin/PKGBUILD
+          commit_username: Andrew Arendt
+          commit_email: andrewarendt@gmail.com
+          ssh_private_key: ${{ secrets.AUR_SSH_PRIVATE_KEY }}
+          commit_message: "ttypo-bin ${{ env.VERSION }}"
+          updpkgsums: true
+          test: true

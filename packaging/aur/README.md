@@ -1,54 +1,63 @@
 # AUR packaging
 
-This directory holds PKGBUILDs for the Arch User Repository. The AUR is
-not a git submodule - each package lives in its own AUR repo. These files
-are the source of truth; copy them into the AUR repos when publishing.
+`ttypo` (source build) and `ttypo-bin` (prebuilt binary) are published to
+the Arch User Repository. Publishing is **automated** via
+`.github/workflows/publish-aur.yml`, which fires whenever a GitHub Release
+is created.
 
 ## One-time setup
 
 1. Make an account at <https://aur.archlinux.org/>.
-2. Add your SSH public key under My Account.
-3. Clone empty repos for each package:
+2. Generate (or reuse) an SSH key, add the public half to your AUR
+   account's SSH Public Key field.
+3. Add the **private** half as a repo secret named `AUR_SSH_PRIVATE_KEY`:
 
    ```sh
-   git clone ssh://aur@aur.archlinux.org/ttypo.git     ../aur-ttypo
-   git clone ssh://aur@aur.archlinux.org/ttypo-bin.git ../aur-ttypo-bin
+   gh secret set AUR_SSH_PRIVATE_KEY < ~/.ssh/aur_ed25519
    ```
 
-## Publishing a new version
-
-For each package (`ttypo` builds from source, `ttypo-bin` uses the
-`cargo-dist`-produced GitHub Release tarballs):
-
-1. Bump `pkgver` in the PKGBUILD here.
-2. Refresh checksums against the published artifacts:
+4. Bootstrap each AUR repo (one push creates the empty package on AUR's
+   side). From this directory:
 
    ```sh
-   cd packaging/aur/ttypo      # or ttypo-bin
-   updpkgsums                  # rewrites sha256sums in place
+   for p in ttypo ttypo-bin; do
+       git clone "ssh://aur@aur.archlinux.org/$p.git" "/tmp/aur-$p"
+       cp "$p/PKGBUILD" "/tmp/aur-$p/"
+       cd "/tmp/aur-$p"
+       updpkgsums
+       makepkg --printsrcinfo > .SRCINFO
+       git add PKGBUILD .SRCINFO
+       git commit -m "initial $p $(grep '^pkgver=' PKGBUILD | cut -d= -f2)"
+       git push
+       cd -
+   done
    ```
 
-3. Generate `.SRCINFO`:
+   After this, the workflow takes over.
 
-   ```sh
-   makepkg --printsrcinfo > .SRCINFO
-   ```
+## Normal release flow
 
-4. Smoke-test the build locally:
+`cargo release patch --execute` does its thing, the release workflow
+publishes binaries to GH, then `publish-aur.yml` fires automatically and:
 
-   ```sh
-   makepkg -si
-   ```
+1. Bumps `pkgver` in both PKGBUILDs to the new tag version.
+2. Runs `updpkgsums` against the live release tarballs to refresh sha256s.
+3. Runs `makepkg --printsrcinfo` to generate `.SRCINFO`.
+4. Builds the package in a clean container to verify it works.
+5. Commits and pushes to the matching AUR repo.
 
-5. Copy `PKGBUILD` + `.SRCINFO` into the matching AUR clone, commit, push:
+Nothing for you to do per-release.
 
-   ```sh
-   cp PKGBUILD .SRCINFO ../../../../aur-ttypo/
-   cd ../../../../aur-ttypo
-   git add PKGBUILD .SRCINFO
-   git commit -m "ttypo $NEW_VERSION"
-   git push
-   ```
+## Manual fallback
 
-`ttypo-bin` must be published *after* the GitHub Release exists, so the
-release tarballs are downloadable for checksum verification.
+If the workflow fails (AUR down, package validation error, etc.), publish
+by hand from this directory:
+
+```sh
+cd packaging/aur/ttypo            # or ttypo-bin
+# Edit pkgver to match the new version
+updpkgsums                        # refresh checksums
+makepkg --printsrcinfo > .SRCINFO
+makepkg -si                       # smoke-test
+# Copy PKGBUILD + .SRCINFO into your aur-ttypo clone, commit, push
+```
