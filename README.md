@@ -74,7 +74,6 @@ cargo binstall ttypo           # fetches prebuilt binary if cargo-binstall is in
 
 A browser build is hosted at [drewja.github.io/ttypo](https://drewja.github.io/ttypo/).
 Language mode only (no file/stdin input, no saved progress).
-Use your browser's zoom (Ctrl/Cmd +) to enlarge the terminal grid.
 
 To build it locally:
 
