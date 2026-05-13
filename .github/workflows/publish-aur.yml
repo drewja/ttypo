@@ -41,7 +41,7 @@ jobs:
       - name: Bump pkgver
         run: sed -i "s/^pkgver=.*/pkgver=$VERSION/" packaging/aur/ttypo/PKGBUILD
 
-      - uses: KSXGitHub/github-actions-deploy-aur@v3
+      - uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: ttypo
           pkgbuild: packaging/aur/ttypo/PKGBUILD
@@ -74,7 +74,7 @@ jobs:
       - name: Bump pkgver
         run: sed -i "s/^pkgver=.*/pkgver=$VERSION/" packaging/aur/ttypo-bin/PKGBUILD
 
-      - uses: KSXGitHub/github-actions-deploy-aur@v3
+      - uses: KSXGitHub/github-actions-deploy-aur@v4.1.3
         with:
           pkgname: ttypo-bin
           pkgbuild: packaging/aur/ttypo-bin/PKGBUILD
