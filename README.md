@@ -42,8 +42,32 @@ Books in the public domain can be found on project [gutenberg](https://www.guten
 
 ## installation
 
+### prebuilt binary (Linux / macOS)
+
 ```bash
-cargo install ttypo
+curl --proto '=https' --tlsv1.2 -LsSf https://github.com/drewja/ttypo/releases/latest/download/ttypo-installer.sh | sh
+```
+
+### prebuilt binary (Windows)
+
+```powershell
+powershell -c "irm https://github.com/drewja/ttypo/releases/latest/download/ttypo-installer.ps1 | iex"
+```
+
+Or download a tarball directly from the [releases page](https://github.com/drewja/ttypo/releases/latest).
+
+### Arch Linux (AUR)
+
+```bash
+yay -S ttypo       # builds from source
+yay -S ttypo-bin   # prebuilt binary
+```
+
+### from source via cargo
+
+```bash
+cargo install ttypo            # compiles from crates.io
+cargo binstall ttypo           # fetches prebuilt binary if cargo-binstall is installed
 ```
 
 ## web version

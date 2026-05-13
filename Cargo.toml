@@ -61,6 +61,11 @@ getrandom = { version = "0.4", features = ["wasm_js"] }
 [dev-dependencies]
 tempfile = "3.27.0"
 
+# The profile that 'dist' will build with
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
 [package.metadata.release]
 # Verify formatting, lint cleanliness, and tests before any release runs.
 pre-release-hook = ["sh", "-c", "cargo fmt --check && cargo clippy --all-targets -- -D warnings && cargo test"]
