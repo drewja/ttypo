@@ -51,8 +51,9 @@ jobs:
           commit_message: "ttypo ${{ env.VERSION }}"
           updpkgsums: true
           test: true
-          # Drop default --nodeps so makepkg installs `cargo` from makedepends.
-          test_flags: --clean --cleanbuild
+          # Default --nodeps skips makedepends; use --syncdeps so makepkg
+          # installs `cargo` via pacman before building.
+          test_flags: --clean --cleanbuild --syncdeps --noconfirm
 
   ttypo-bin:
     if: >
