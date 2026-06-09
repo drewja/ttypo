@@ -30,7 +30,6 @@ Practice, improve, and measure your touch typing skills while reading and learni
 
 Read a book or other document while simultaneously improving your typing speed and accuracy.
 
-This project is under active development with new features coming soon!
 Please report bugs and/or feature requests to the github issue tracker.
 Pull requests are welcomed and encouraged.
 
