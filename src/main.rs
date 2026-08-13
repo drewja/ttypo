@@ -99,6 +99,14 @@ struct Opt {
     #[arg(long)]
     no_save: bool,
 
+    /// Start with the keyboard widget visible
+    #[arg(long, conflicts_with = "hide_keyboard")]
+    show_keyboard: bool,
+
+    /// Start with the keyboard widget hidden
+    #[arg(long)]
+    hide_keyboard: bool,
+
     #[command(subcommand)]
     command: Option<Command>,
 }
@@ -446,8 +454,16 @@ fn main() -> io::Result<()> {
     // screen and Ctrl+k can toggle it from any phase.
     let mut kb = KeyboardState::new();
     // File mode is usually a long-form text where extra vertical space matters
-    // more than the keyboard heat map, so default it to hidden.
-    let mut kb_visible = opt.contents.is_none();
+    // more than the keyboard heat map, so default it to hidden. Either flag
+    // overrides that default; Ctrl+k still toggles from there. This is intent
+    // only, split_with_keyboard drops the widget when the window is too small.
+    let mut kb_visible = if opt.show_keyboard {
+        true
+    } else if opt.hide_keyboard {
+        false
+    } else {
+        opt.contents.is_none()
+    };
 
     // Outer "session" loop: re-entered when the user hits 'm' on the results
     // screen to return to the main menu. File mode never re-enters since 'm'
@@ -790,6 +806,8 @@ mod tests {
             ascii,
             restart: false,
             no_save: false,
+            show_keyboard: false,
+            hide_keyboard: false,
             command: None,
         }
     }

@@ -107,6 +107,8 @@ Options:
       --ascii                 Display all but skip non-ASCII characters during typing
       --restart               Ignore saved progress for the input file and start from the beginning
       --no-save               Do not persist per-document progress for this invocation
+      --show-keyboard         Start with the keyboard widget visible
+      --hide-keyboard         Start with the keyboard widget hidden
   -h, --help                  Print help
   -V, --version               Print version
 ```
@@ -119,6 +121,18 @@ Options:
 | `ttypo text.txt`                         |                     practice on contents of `text.txt` |
 | `ttypo --ascii source.rs`                |      type a source file, skipping non-ASCII characters |
 | `man ls \| ttypo --ascii -`              |                  practice typing a man page from stdin |
+
+### keyboard
+
+The on-screen keyboard highlights each key as you press it and marks the keys you
+get wrong. `Ctrl+k` toggles it at any time.
+
+It starts visible in language mode and hidden in file mode, where the vertical
+space usually matters more. `--show-keyboard` and `--hide-keyboard` override that
+default.
+
+The keyboard needs a terminal at least 105 columns wide and 21 rows tall. Below
+that it stays hidden regardless of the setting, and reappears if you resize.
 
 ## languages
 
