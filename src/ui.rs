@@ -1,7 +1,7 @@
 use crate::config::Theme;
 use crate::content::Content;
 
-use super::test::{Test, TestWord, results};
+use super::test::{DisplayLine, Test, TestWord, results};
 
 use ratatui::{
     buffer::Buffer,
@@ -113,9 +113,16 @@ impl ThemedWidget for &Test {
 
         let lines = self.lines();
         let is_file_mode = !lines.is_empty();
+        // Width inside borders + horizontal padding (1 each side).
+        let inner_width = chunks[1].width.saturating_sub(4);
+        let inner_height = chunks[1].height.saturating_sub(2);
+        // Rows to skip inside the first rendered line (file mode only).
+        let mut file_skip_rows: usize = 0;
         let target_lines: Vec<Line> = if is_file_mode {
             // File mode: scroll first, then build spans only for visible lines.
-            let available = chunks[1].height.saturating_sub(2) as usize;
+            // Lines may wrap, so scroll is measured in wrapped rows: walk back
+            // from the cursor row until half the viewport is filled.
+            let available = inner_height as usize;
             let current_line_idx = lines
                 .iter()
                 .position(|dl| {
@@ -124,12 +131,50 @@ impl ThemedWidget for &Test {
                         && self.current_word < dl.word_start + dl.word_count
                 })
                 .unwrap_or(0);
-            let scroll = current_line_idx.saturating_sub(available / 2);
+            let cur = &lines[current_line_idx];
+            let cursor_row = if cur.word_count > 0 {
+                wrap_row(
+                    &self.words[cur.word_start..cur.word_start + cur.word_count],
+                    &self.content,
+                    cur.indent.chars().count(),
+                    self.current_word - cur.word_start,
+                    inner_width,
+                )
+            } else {
+                0
+            };
 
-            lines
+            let mut start = current_line_idx;
+            let mut above = available / 2;
+            if above <= cursor_row {
+                file_skip_rows = cursor_row - above;
+            } else {
+                above -= cursor_row;
+                while above > 0 && start > 0 {
+                    start -= 1;
+                    let h = line_rows(&lines[start], &self.words, &self.content, inner_width);
+                    if h >= above {
+                        file_skip_rows = h - above;
+                        above = 0;
+                    } else {
+                        above -= h;
+                    }
+                }
+            }
+
+            // Take lines until the viewport (plus skipped rows) is covered.
+            let mut rows = 0;
+            let count = lines[start..]
                 .iter()
-                .skip(scroll)
-                .take(available)
+                .take_while(|dl| {
+                    let more = rows < available + file_skip_rows;
+                    rows += line_rows(dl, &self.words, &self.content, inner_width);
+                    more
+                })
+                .count();
+
+            lines[start..start + count]
+                .iter()
                 .map(|dl| {
                     if dl.word_count == 0 {
                         return Line::from("");
@@ -169,11 +214,8 @@ impl ThemedWidget for &Test {
             vec![Line::from(spans)]
         };
         let scroll_y: u16 = if is_file_mode {
-            0
+            file_skip_rows.min(u16::MAX as usize) as u16
         } else {
-            // Width inside borders + horizontal padding (1 each side).
-            let inner_width = chunks[1].width.saturating_sub(4);
-            let inner_height = chunks[1].height.saturating_sub(2);
             let current_row =
                 current_wrap_row(&self.words, &self.content, self.current_word, inner_width);
             current_row.saturating_sub(inner_height / 2)
@@ -209,25 +251,50 @@ fn truncate_with_ellipsis(s: &str, max: usize) -> String {
 // Simulate ratatui's word-wrap to find which wrapped row holds `current_word`.
 // Words separated by single spaces, greedy fit at `width` columns.
 fn current_wrap_row(words: &[TestWord], content: &Content, current_word: usize, width: u16) -> u16 {
+    wrap_row(words, content, 0, current_word, width).min(u16::MAX as usize) as u16
+}
+
+// Same simulation for one file-mode line: `indent` columns of leading
+// whitespace precede the first word. Returns the row holding `words[stop_at]`,
+// or the last row if `stop_at` is past the end.
+fn wrap_row(
+    words: &[TestWord],
+    content: &Content,
+    indent: usize,
+    stop_at: usize,
+    width: u16,
+) -> usize {
     let width = width.max(1) as usize;
     let mut row: usize = 0;
-    let mut col: usize = 0;
+    let mut col: usize = indent;
+    let mut row_empty = true;
     for (i, word) in words.iter().enumerate() {
         let text = &content.as_str()[word.range.start as usize..word.range.end as usize];
-        let w_len = text.chars().count();
-        if col == 0 {
-            col = w_len;
+        // Overtyped characters render past the end of the word.
+        let w_len = text.chars().count().max(word.progress.chars().count());
+        if row_empty {
+            col += w_len;
+            row_empty = false;
         } else if col + 1 + w_len > width {
             row += 1;
             col = w_len;
         } else {
             col += 1 + w_len;
         }
-        if i == current_word {
-            return row.min(u16::MAX as usize) as u16;
+        if i == stop_at {
+            break;
         }
     }
-    row.min(u16::MAX as usize) as u16
+    row
+}
+
+// Number of wrapped rows a file-mode line occupies.
+fn line_rows(dl: &DisplayLine, words: &[TestWord], content: &Content, width: u16) -> usize {
+    if dl.word_count == 0 {
+        return 1;
+    }
+    let words = &words[dl.word_start..dl.word_start + dl.word_count];
+    wrap_row(words, content, dl.indent.chars().count(), usize::MAX, width) + 1
 }
 
 // Append `word`'s spans (styled according to its state relative to
@@ -962,6 +1029,41 @@ mod tests {
                 ("é".to_string(), Skipped),
             ];
             assert_eq!(got, expected);
+        }
+    }
+
+    mod file_mode_scroll {
+        use super::*;
+        use std::sync::Arc;
+
+        fn buffer_text(buf: &Buffer) -> String {
+            buf.content().iter().map(|c| c.symbol()).collect()
+        }
+
+        // Lines that wrap to several rows must still keep the cursor's row
+        // inside the viewport.
+        #[test]
+        fn cursor_visible_when_lines_wrap() {
+            // 10 lines of 8 three-char words: 31 cols, wraps to 2 rows at width 20.
+            let text: String = (0..10)
+                .map(|l| {
+                    (0..8)
+                        .map(|w| format!("w{}{}", l, w))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            let content = Arc::new(Content::from_text(text, "f".into()));
+            let mut test = Test::new(content, true, false, true, false, "f".into());
+            test.current_word = 8 * 8 + 6; // "w86", second row of line 8
+
+            // 24 wide -> 20 inner cols; 10 tall -> 6 inner rows.
+            let area = Rect::new(0, 0, 24, 10);
+            let mut buf = Buffer::empty(area);
+            (&test).render(area, &mut buf, &Theme::default());
+            let out = buffer_text(&buf);
+            assert!(out.contains("w86"), "cursor word not visible:\n{out}");
         }
     }
 }
