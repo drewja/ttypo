@@ -30,16 +30,18 @@ const DEFAULT_WORDS: usize = 50;
 pub fn start() -> Result<(), JsValue> {
     console_error_panic_hook::set_once();
     let backend = DomBackend::new().map_err(|e| JsValue::from_str(&format!("{e:?}")))?;
-    let terminal = Terminal::new(backend).map_err(|e| JsValue::from_str(&e.to_string()))?;
+    let mut terminal = Terminal::new(backend).map_err(|e| JsValue::from_str(&e.to_string()))?;
 
     let session = Rc::new(RefCell::new(Session::new()));
 
-    terminal.on_key_event({
-        let session = session.clone();
-        move |key: ratzilla::event::KeyEvent| {
-            session.borrow_mut().handle_key(&convert_key(key));
-        }
-    });
+    terminal
+        .on_key_event({
+            let session = session.clone();
+            move |key: ratzilla::event::KeyEvent| {
+                session.borrow_mut().handle_key(&convert_key(key));
+            }
+        })
+        .map_err(|e| JsValue::from_str(&format!("{e:?}")))?;
 
     terminal.draw_web({
         let session = session.clone();
