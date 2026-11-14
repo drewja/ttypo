@@ -160,7 +160,7 @@ impl Opt {
                     .and_then(Result::ok)
                     .or_else(|| fs::read(self.language_dir().join(&lang_name)).ok())
                     .or_else(|| {
-                        Resources::get(&format!("language/{}", &lang_name))
+                        Resources::get(&format!("language/{lang_name}"))
                             .map(|f| f.data.into_owned())
                     })
                 else {
@@ -262,7 +262,7 @@ impl Opt {
             .clone()
             .unwrap_or_else(|| config.default_language.clone());
         let found = self.language_dir().join(&lang).is_file()
-            || Resources::get(&format!("language/{}", &lang)).is_some();
+            || Resources::get(&format!("language/{lang}")).is_some();
         if found { Ok(()) } else { Err(lang) }
     }
 }
