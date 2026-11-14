@@ -2090,6 +2090,7 @@ dependencies = [
  "clap",
  "clap_complete",
  "console_error_panic_hook",
+ "critical-section",
  "crossterm",
  "dirs",
  "getrandom 0.4.3",
