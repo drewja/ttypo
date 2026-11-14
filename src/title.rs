@@ -12,7 +12,7 @@ use crossterm::event::{self, Event};
 use ratatui::{Terminal, backend::CrosstermBackend};
 use ratatui::{
     buffer::Buffer,
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Rect},
     style::{Modifier, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Padding, Paragraph, Widget},
@@ -73,12 +73,6 @@ impl Cursor {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Mode {
-    Menu,
-    LanguagePicker,
-}
-
 #[derive(Debug, Clone)]
 pub struct Title {
     pub language: String,
@@ -89,9 +83,6 @@ pub struct Title {
     pub ascii: bool,
     pub languages: Vec<String>,
     cursor: Cursor,
-    mode: Mode,
-    picker_filter: String,
-    picker_cursor: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -119,9 +110,6 @@ impl Title {
             ascii,
             languages,
             cursor: Cursor::Words,
-            mode: Mode::Menu,
-            picker_filter: String::new(),
-            picker_cursor: 0,
         }
     }
 
@@ -175,35 +163,6 @@ impl Title {
             Cursor::Ascii => self.ascii = !self.ascii,
             _ => {}
         }
-    }
-
-    fn filtered_languages(&self) -> impl Iterator<Item = &String> {
-        let f = self.picker_filter.to_lowercase();
-        self.languages
-            .iter()
-            .filter(move |l| f.is_empty() || l.to_lowercase().contains(&f))
-    }
-
-    fn filtered_count(&self) -> usize {
-        self.filtered_languages().count()
-    }
-
-    fn open_picker(&mut self) {
-        self.mode = Mode::LanguagePicker;
-        self.picker_filter.clear();
-        self.picker_cursor = self
-            .languages
-            .iter()
-            .position(|l| l == &self.language)
-            .unwrap_or(0);
-    }
-
-    fn commit_picker(&mut self) {
-        let pick = self.filtered_languages().nth(self.picker_cursor).cloned();
-        if let Some(name) = pick {
-            self.language = name;
-        }
-        self.mode = Mode::Menu;
     }
 }
 
@@ -265,86 +224,51 @@ impl Title {
         let code = ev.code;
         let modifiers = ev.modifiers;
 
-        match self.mode {
-            Mode::Menu => match code {
-                KeyCode::Esc | KeyCode::Char('q') => return Some(Outcome::Quit),
-                KeyCode::Up | KeyCode::Char('k') => self.cursor = self.cursor.prev(),
-                KeyCode::Down | KeyCode::Char('j') => self.cursor = self.cursor.next(),
-                // Shift+arrow or uppercase H/L: fine-tune words by ±1.
-                // SHIFT arms must consume the event even when the cursor isn't
-                // Words, so other arms don't fire on Shift+Left/Right; #[allow]
-                // because collapsing the inner check into a guard would let
-                // the unmodified Left/Right arms run instead.
-                #[allow(clippy::collapsible_match)]
-                KeyCode::Left if modifiers.contains(KeyModifiers::SHIFT) => {
-                    if self.cursor == Cursor::Words {
-                        self.adjust_words(-1);
-                    }
-                }
-                #[allow(clippy::collapsible_match)]
-                KeyCode::Right if modifiers.contains(KeyModifiers::SHIFT) => {
-                    if self.cursor == Cursor::Words {
-                        self.adjust_words(1);
-                    }
-                }
-                KeyCode::Char('H') if self.cursor == Cursor::Words => {
+        match code {
+            KeyCode::Esc | KeyCode::Char('q') => return Some(Outcome::Quit),
+            KeyCode::Up | KeyCode::Char('k') => self.cursor = self.cursor.prev(),
+            KeyCode::Down | KeyCode::Char('j') => self.cursor = self.cursor.next(),
+            // Shift+arrow or uppercase H/L: fine-tune words by ±1.
+            // SHIFT arms must consume the event even when the cursor isn't
+            // Words, so other arms don't fire on Shift+Left/Right; #[allow]
+            // because collapsing the inner check into a guard would let
+            // the unmodified Left/Right arms run instead.
+            #[allow(clippy::collapsible_match)]
+            KeyCode::Left if modifiers.contains(KeyModifiers::SHIFT) => {
+                if self.cursor == Cursor::Words {
                     self.adjust_words(-1);
                 }
-                KeyCode::Char('L') if self.cursor == Cursor::Words => {
+            }
+            #[allow(clippy::collapsible_match)]
+            KeyCode::Right if modifiers.contains(KeyModifiers::SHIFT) => {
+                if self.cursor == Cursor::Words {
                     self.adjust_words(1);
                 }
-                // Plain arrow / h / l: language cycle or words preset cycle.
-                KeyCode::Left | KeyCode::Char('h') => match self.cursor {
-                    Cursor::Language => self.cycle_language(-1),
-                    Cursor::Words => self.prev_word_preset(),
-                    Cursor::SuddenDeath
-                    | Cursor::NoBacktrack
-                    | Cursor::NoBackspace
-                    | Cursor::Ascii => self.toggle_current(),
-                },
-                KeyCode::Right | KeyCode::Char('l') => match self.cursor {
-                    Cursor::Language => self.cycle_language(1),
-                    Cursor::Words => self.next_word_preset(),
-                    Cursor::SuddenDeath
-                    | Cursor::NoBacktrack
-                    | Cursor::NoBackspace
-                    | Cursor::Ascii => self.toggle_current(),
-                },
-                KeyCode::Char(' ') => self.toggle_current(),
-                KeyCode::Enter => match self.cursor {
-                    Cursor::Language => self.open_picker(),
-                    _ => return Some(Outcome::Start),
-                },
-                _ => {}
-            },
-            Mode::LanguagePicker => {
-                let count = self.filtered_count();
-                match code {
-                    KeyCode::Esc => self.mode = Mode::Menu,
-                    KeyCode::Enter => self.commit_picker(),
-                    KeyCode::Up | KeyCode::Char('K') if self.picker_cursor > 0 => {
-                        self.picker_cursor -= 1;
-                    }
-                    KeyCode::Down | KeyCode::Char('J') if self.picker_cursor + 1 < count => {
-                        self.picker_cursor += 1;
-                    }
-                    KeyCode::PageUp => {
-                        self.picker_cursor = self.picker_cursor.saturating_sub(10);
-                    }
-                    KeyCode::PageDown => {
-                        self.picker_cursor = (self.picker_cursor + 10).min(count.saturating_sub(1));
-                    }
-                    KeyCode::Backspace => {
-                        self.picker_filter.pop();
-                        self.picker_cursor = 0;
-                    }
-                    KeyCode::Char(c) if !modifiers.contains(KeyModifiers::CONTROL) => {
-                        self.picker_filter.push(c);
-                        self.picker_cursor = 0;
-                    }
-                    _ => {}
-                }
             }
+            KeyCode::Char('H') if self.cursor == Cursor::Words => {
+                self.adjust_words(-1);
+            }
+            KeyCode::Char('L') if self.cursor == Cursor::Words => {
+                self.adjust_words(1);
+            }
+            // Plain arrow / h / l: language cycle or words preset cycle.
+            KeyCode::Left | KeyCode::Char('h') => match self.cursor {
+                Cursor::Language => self.cycle_language(-1),
+                Cursor::Words => self.prev_word_preset(),
+                Cursor::SuddenDeath | Cursor::NoBacktrack | Cursor::NoBackspace | Cursor::Ascii => {
+                    self.toggle_current()
+                }
+            },
+            KeyCode::Right | KeyCode::Char('l') => match self.cursor {
+                Cursor::Language => self.cycle_language(1),
+                Cursor::Words => self.next_word_preset(),
+                Cursor::SuddenDeath | Cursor::NoBacktrack | Cursor::NoBackspace | Cursor::Ascii => {
+                    self.toggle_current()
+                }
+            },
+            KeyCode::Char(' ') => self.toggle_current(),
+            KeyCode::Enter => return Some(Outcome::Start),
+            _ => {}
         }
         None
     }
@@ -385,21 +309,7 @@ impl ThemedWidget for &TitleWidget<'_> {
     fn render(self, area: Rect, buf: &mut Buffer, theme: &Theme) {
         buf.set_style(area, theme.default);
 
-        match self.title.mode {
-            Mode::Menu => self.title.render_menu(area, buf, theme, true, self.kb),
-            Mode::LanguagePicker => {
-                // Picker stays a centered narrow card so the language list reads naturally.
-                let card_w = 60u16.min(area.width);
-                let card_h = 15u16.min(area.height);
-                let card = Rect {
-                    x: area.x + area.width.saturating_sub(card_w) / 2,
-                    y: area.y + area.height.saturating_sub(card_h) / 2,
-                    width: card_w,
-                    height: card_h,
-                };
-                self.title.render_picker(card, buf, theme);
-            }
-        }
+        self.title.render_menu(area, buf, theme, true, self.kb);
     }
 }
 
@@ -497,12 +407,7 @@ fn hint_groups_for(cursor: Cursor) -> &'static [HintGroup] {
     }
 }
 
-fn enter_action_label(cursor: Cursor) -> &'static str {
-    match cursor {
-        Cursor::Language => "BROWSE",
-        _ => "START",
-    }
-}
+const ENTER_ACTION_LABEL: &str = "START";
 
 fn render_enter_key(
     action: &str,
@@ -696,10 +601,7 @@ impl Title {
         m.insert("L".into(), "L→".into());
         m.insert("J".into(), "J↓".into());
         m.insert("K".into(), "↑K".into());
-        m.insert(
-            "Enter".into(),
-            format!("↵ {}", enter_action_label(self.cursor)),
-        );
+        m.insert("Enter".into(), format!("↵ {ENTER_ACTION_LABEL}"));
         m
     }
 
@@ -868,7 +770,7 @@ impl Title {
             Paragraph::new(banner_lines).render(banner_rect, buf);
 
             render_enter_key(
-                enter_action_label(self.cursor),
+                ENTER_ACTION_LABEL,
                 kb.is_pressed("Enter"),
                 group_x + banner_w + BANNER_ENTER_GAP,
                 group_top,
@@ -937,7 +839,7 @@ impl Title {
             render_hint_group_below(&hints[1], row_x, y, buf, theme, kb);
             render_hint_group_below(&hints[0], row_x + jk_w + COL_GAP, y, buf, theme, kb);
             render_enter_key(
-                enter_action_label(self.cursor),
+                ENTER_ACTION_LABEL,
                 kb.is_pressed("Enter"),
                 row_x + jk_w + COL_GAP + hl_w + COL_GAP,
                 y,
@@ -1022,68 +924,12 @@ impl Title {
 
     fn hint_text(&self) -> &'static str {
         match self.cursor {
-            Cursor::Language => "h l cycle   ⏎ browse all   j k navigate",
+            Cursor::Language => "h l cycle   ⏎ start   j k navigate",
             Cursor::Words => "h l preset   H L ±1   ⏎ start   j k navigate",
             Cursor::SuddenDeath | Cursor::NoBacktrack | Cursor::NoBackspace | Cursor::Ascii => {
                 "h l space toggle   ⏎ start   j k navigate"
             }
         }
-    }
-
-    fn render_picker(&self, area: Rect, buf: &mut Buffer, theme: &Theme) {
-        let block = Block::default()
-            .title(Span::styled(" select language ", theme.title))
-            .borders(Borders::ALL)
-            .border_type(theme.border_type)
-            .border_style(theme.prompt_border)
-            .padding(Padding::new(2, 2, 1, 1));
-
-        let inner = block.inner(area);
-        block.render(area, buf);
-
-        let chunks = Layout::default()
-            .direction(Direction::Vertical)
-            .constraints([
-                Constraint::Length(1),
-                Constraint::Length(1),
-                Constraint::Min(1),
-                Constraint::Length(1),
-            ])
-            .split(inner);
-
-        let filter_line = Line::from(vec![
-            Span::styled("filter: ", theme.prompt_untyped),
-            Span::styled(self.picker_filter.clone(), theme.prompt_current_correct),
-            Span::styled(" ", theme.prompt_cursor),
-        ]);
-        buf.set_line(chunks[0].x, chunks[0].y, &filter_line, chunks[0].width);
-
-        let list_h = chunks[2].height as usize;
-        let scroll = if self.picker_cursor >= list_h {
-            self.picker_cursor + 1 - list_h
-        } else {
-            0
-        };
-        let filtered: Vec<&String> = self.filtered_languages().collect();
-        for (i, name) in filtered.iter().skip(scroll).take(list_h).enumerate() {
-            let idx = scroll + i;
-            let (marker, style) = if idx == self.picker_cursor {
-                ("▸ ", theme.prompt_current_correct)
-            } else {
-                ("  ", theme.prompt_untyped)
-            };
-            let line = Line::from(vec![
-                Span::raw(marker.to_string()),
-                Span::styled((*name).clone(), style),
-            ]);
-            buf.set_line(chunks[2].x, chunks[2].y + i as u16, &line, chunks[2].width);
-        }
-
-        let footer = Line::from(Span::styled(
-            "type to filter  J K navigate  ⏎ select  esc back",
-            theme.results_restart_prompt,
-        ));
-        buf.set_line(chunks[3].x, chunks[3].y, &footer, chunks[3].width);
     }
 }
 
@@ -1116,7 +962,7 @@ mod tests {
         assert_eq!(m.get("L").map(String::as_str), Some("L→"));
         assert_eq!(m.get("J").map(String::as_str), Some("J↓"));
         assert_eq!(m.get("K").map(String::as_str), Some("↑K"));
-        assert_eq!(m.get("Enter").map(String::as_str), Some("↵ BROWSE"));
+        assert_eq!(m.get("Enter").map(String::as_str), Some("↵ START"));
     }
 
     #[test]
@@ -1184,37 +1030,5 @@ mod tests {
         t.cursor = Cursor::Ascii;
         t.toggle_current();
         assert!(t.ascii);
-    }
-
-    #[test]
-    fn filter_narrows_list() {
-        let mut t = sample_title();
-        t.picker_filter = "1000".into();
-        let matches: Vec<&String> = t.filtered_languages().collect();
-        assert_eq!(matches, vec![&"english1000".to_string()]);
-    }
-
-    #[test]
-    fn empty_filter_yields_all() {
-        let t = sample_title();
-        assert_eq!(t.filtered_count(), 3);
-    }
-
-    #[test]
-    fn open_picker_positions_at_current() {
-        let mut t = sample_title();
-        t.open_picker();
-        assert_eq!(t.mode, Mode::LanguagePicker);
-        assert_eq!(t.picker_cursor, 1);
-    }
-
-    #[test]
-    fn commit_picker_sets_language() {
-        let mut t = sample_title();
-        t.open_picker();
-        t.picker_cursor = 2;
-        t.commit_picker();
-        assert_eq!(t.language, "english1000");
-        assert_eq!(t.mode, Mode::Menu);
     }
 }
