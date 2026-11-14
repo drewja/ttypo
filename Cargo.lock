@@ -2085,7 +2085,7 @@ checksum = "009dbb7700f11c55ef83aebbe4c0e9cf1f1ac0844bd8d6f00dc38f302026e13a"
 
 [[package]]
 name = "ttypo"
-version = "0.1.23"
+version = "0.1.24"
 dependencies = [
  "clap",
  "clap_complete",
